@@ -3,113 +3,502 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TorrentFlow — a fast torrent client for Windows</title>
-<meta name="description" content="TorrentFlow is a lightweight native torrent client for Windows. Preview before you download. Built with Tauri 2 and librqbit." />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>⚡</text></svg>" />
+<title>TorrentFlow — the torrent client that gets out of your way</title>
+<meta name="description" content="TorrentFlow is a fast, lightweight torrent client for Windows. Stream while you download, preview before you commit. Native, open source, zero bloat." />
+<meta property="og:title" content="TorrentFlow" />
+<meta property="og:description" content="Fast, lightweight torrent client for Windows. Stream while downloading. Native. Open source." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%2322c55e'/><path d='M50 18 28 54h16l-4 28 30-40H52l6-24z' fill='%230b0e14'/></svg>" />
 <style>
   :root {
-    --bg: #0b0e14;
-    --panel: #12161f;
-    --border: #1f2633;
-    --text: #e6ebf2;
-    --muted: #8b95a7;
-    --accent: #4f8cff;
-    --accent-2: #22d3a5;
+    --bg: #07090d;
+    --bg-2: #0b0f16;
+    --panel: rgba(255,255,255,0.03);
+    --panel-2: rgba(255,255,255,0.05);
+    --border: rgba(255,255,255,0.08);
+    --text: #e8edf4;
+    --muted: #94a0b4;
+    --dim: #5c6779;
+    --green: #22c55e;
+    --green-soft: rgba(34,197,94,0.12);
+    --glow: rgba(34,197,94,0.25);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body {
     background: var(--bg);
     color: var(--text);
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
-  nav { display: flex; align-items: center; justify-content: space-between; padding: 24px 0; }
-  .logo { font-weight: 700; font-size: 18px; letter-spacing: -0.02em; display: flex; gap: 10px; align-items: center; }
-  .logo .dot { width: 10px; height: 10px; border-radius: 3px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
-  nav a.gh { color: var(--muted); text-decoration: none; font-size: 15px; }
-  nav a.gh:hover { color: var(--text); }
-  header { padding: 96px 0 72px; text-align: center; }
-  h1 { font-size: clamp(40px, 7vw, 64px); letter-spacing: -0.03em; line-height: 1.05; }
-  h1 span { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .sub { margin: 20px auto 36px; max-width: 560px; color: var(--muted); font-size: 18px; }
-  .cta { display: inline-flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+  ::selection { background: var(--green); color: #05080c; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+
+  /* ---------- backdrop ---------- */
+  .backdrop { position: fixed; inset: 0; z-index: -2; overflow: hidden; }
+  .aurora {
+    position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.5;
+    animation: drift 26s ease-in-out infinite alternate;
+  }
+  .aurora.a1 { width: 720px; height: 720px; top: -280px; left: 8%; background: radial-gradient(circle, rgba(34,197,94,0.28), transparent 65%); }
+  .aurora.a2 { width: 640px; height: 640px; top: 10%; right: -180px; background: radial-gradient(circle, rgba(56,130,246,0.16), transparent 65%); animation-delay: -8s; animation-duration: 32s; }
+  .aurora.a3 { width: 560px; height: 560px; bottom: -220px; left: 30%; background: radial-gradient(circle, rgba(34,197,94,0.12), transparent 65%); animation-delay: -16s; animation-duration: 38s; }
+  @keyframes drift {
+    0% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(60px, -40px) scale(1.12); }
+    100% { transform: translate(-40px, 30px) scale(0.95); }
+  }
+  .grid-lines {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, black 30%, transparent 75%);
+  }
+
+  /* ---------- nav ---------- */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    background: rgba(7,9,13,0.7); border-bottom: 1px solid var(--border);
+  }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16.5px; letter-spacing: -0.02em; text-decoration: none; color: var(--text); }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #34d977, #16a34a);
+    box-shadow: 0 0 18px var(--glow);
+  }
+  .logo-mark svg { width: 15px; height: 15px; fill: #05080c; }
+  .nav-links { display: flex; align-items: center; gap: 26px; }
+  .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; transition: color .15s; }
+  .nav-links a:hover { color: var(--text); }
+  .nav-cta {
+    padding: 8px 18px; border-radius: 8px; font-weight: 600; font-size: 13.5px;
+    background: var(--green); color: #05080c !important;
+    box-shadow: 0 0 0 0 var(--glow); transition: box-shadow .2s, transform .15s;
+  }
+  .nav-cta:hover { box-shadow: 0 0 24px var(--glow); transform: translateY(-1px); }
+  @media (max-width: 720px) { .nav-links a:not(.nav-cta) { display: none; } }
+
+  /* ---------- hero ---------- */
+  header { padding: 110px 0 40px; text-align: center; position: relative; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--panel);
+    color: var(--muted); font-size: 13px; margin-bottom: 30px;
+  }
+  .pill .ver { color: var(--green); font-family: var(--mono); font-weight: 600; }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  h1 {
+    font-size: clamp(44px, 8vw, 84px);
+    line-height: 1.02; letter-spacing: -0.04em; font-weight: 800;
+    margin-bottom: 26px;
+  }
+  h1 .grad {
+    background: linear-gradient(100deg, #e8edf4 20%, #34d977 55%, #16a34a 80%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { max-width: 620px; margin: 0 auto 40px; color: var(--muted); font-size: 18.5px; }
+  .sub strong { color: var(--text); font-weight: 600; }
+  .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 22px; }
   .btn {
-    display: inline-block; padding: 13px 28px; border-radius: 10px; text-decoration: none;
-    font-weight: 600; font-size: 16px; transition: transform .12s ease, opacity .12s ease;
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 15px 32px; border-radius: 12px; text-decoration: none;
+    font-weight: 650; font-size: 16px; transition: transform .15s, box-shadow .2s, background .15s;
   }
-  .btn:hover { transform: translateY(-2px); }
-  .btn-primary { background: var(--accent); color: #fff; }
-  .btn-ghost { border: 1px solid var(--border); color: var(--text); }
-  .meta { margin-top: 18px; color: var(--muted); font-size: 13px; }
-  section.features { padding: 48px 0 80px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; }
-  .card {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 26px 22px;
+  .btn svg { width: 18px; height: 18px; fill: currentColor; }
+  .btn-primary { background: var(--green); color: #05080c; box-shadow: 0 8px 32px -6px var(--glow); }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 44px -6px var(--glow); }
+  .btn-ghost { border: 1px solid var(--border); color: var(--text); background: var(--panel); }
+  .btn-ghost:hover { background: var(--panel-2); transform: translateY(-2px); }
+  .hero-note { color: var(--dim); font-size: 13px; font-family: var(--mono); }
+
+  /* ---------- screenshot ---------- */
+  .shot-zone { position: relative; padding: 64px 0 30px; }
+  .shot-frame {
+    position: relative; border-radius: 16px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.6),
+      0 40px 100px -20px rgba(0,0,0,0.8),
+      0 0 90px -18px var(--glow);
+    background: var(--bg-2);
+    transform: perspective(1400px) rotateX(2.2deg);
+    transition: transform .5s ease;
   }
-  .card h3 { font-size: 17px; margin-bottom: 8px; letter-spacing: -0.01em; }
-  .card p { color: var(--muted); font-size: 14.5px; }
-  .card .ico { font-size: 24px; margin-bottom: 12px; }
-  .stack { padding: 32px 0 64px; text-align: center; color: var(--muted); font-size: 14px; }
-  .stack code { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; color: var(--text); font-size: 13px; }
-  footer { border-top: 1px solid var(--border); padding: 28px 0 40px; color: var(--muted); font-size: 13.5px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-  footer a { color: var(--muted); }
-  @media (max-width: 560px) { header { padding: 64px 0 48px; } }
+  .shot-zone:hover .shot-frame { transform: perspective(1400px) rotateX(0deg); }
+  .shot-frame img { display: block; width: 100%; height: auto; }
+  .shot-bar {
+    display: flex; align-items: center; gap: 7px;
+    padding: 11px 14px; background: rgba(255,255,255,0.04); border-bottom: 1px solid var(--border);
+  }
+  .shot-bar span { width: 11px; height: 11px; border-radius: 50%; }
+  .shot-bar .r { background: #ff5f57; } .shot-bar .y { background: #febc2e; } .shot-bar .g { background: #28c840; }
+  .shot-bar .addr {
+    margin-left: 10px; padding: 2px 14px; border-radius: 6px;
+    background: rgba(0,0,0,0.35); color: var(--dim);
+    font-family: var(--mono); font-size: 11.5px;
+  }
+  .float-card {
+    position: absolute; z-index: 5;
+    background: rgba(13,17,24,0.92); backdrop-filter: blur(12px);
+    border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px 18px; box-shadow: 0 20px 60px -12px rgba(0,0,0,0.7);
+    animation: floaty 7s ease-in-out infinite;
+  }
+  .float-card .big { font-size: 20px; font-weight: 750; letter-spacing: -0.02em; }
+  .float-card .small { font-size: 12px; color: var(--muted); }
+  .fc-1 { top: 90px; left: -14px; }
+  .fc-2 { bottom: 110px; right: -10px; animation-delay: -3.5s; }
+  .fc-2 .green { color: var(--green); }
+  @keyframes floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+  @media (max-width: 900px) { .float-card { display: none; } .shot-frame { transform: none; } }
+
+  /* ---------- stats ---------- */
+  .stats { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin: 40px 0 0; }
+  .stats-inner { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .stat { padding: 34px 20px; text-align: center; border-left: 1px solid var(--border); }
+  .stat:first-child { border-left: none; }
+  .stat .n { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; }
+  .stat .n em { font-style: normal; color: var(--green); }
+  .stat .l { font-size: 12.5px; color: var(--dim); margin-top: 2px; }
+  @media (max-width: 720px) { .stats-inner { grid-template-columns: repeat(2, 1fr); } .stat:nth-child(3) { border-left: none; } }
+
+  /* ---------- sections ---------- */
+  section { padding: 110px 0; }
+  .sec-tag {
+    display: inline-block; font-family: var(--mono); font-size: 12px;
+    color: var(--green); border: 1px solid rgba(34,197,94,0.3);
+    background: var(--green-soft); border-radius: 999px; padding: 4px 14px; margin-bottom: 18px;
+  }
+  h2 { font-size: clamp(30px, 4.6vw, 44px); letter-spacing: -0.03em; line-height: 1.12; font-weight: 750; margin-bottom: 16px; }
+  .sec-sub { color: var(--muted); font-size: 17px; max-width: 560px; }
+
+  /* ---------- bento ---------- */
+  .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 56px; }
+  .cell {
+    grid-column: span 2;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 18px;
+    padding: 30px 26px; position: relative; overflow: hidden;
+    transition: border-color .2s, transform .2s, background .2s;
+  }
+  .cell:hover { border-color: rgba(34,197,94,0.35); transform: translateY(-3px); background: var(--panel-2); }
+  .cell::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(420px 200px at var(--mx,50%) -20%, rgba(34,197,94,0.09), transparent 60%);
+    opacity: 0; transition: opacity .25s; pointer-events: none;
+  }
+  .cell:hover::before { opacity: 1; }
+  .cell.wide { grid-column: span 3; }
+  .cell .ico {
+    width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center;
+    background: var(--green-soft); border: 1px solid rgba(34,197,94,0.25);
+    font-size: 20px; margin-bottom: 18px;
+  }
+  .cell h3 { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; margin-bottom: 8px; }
+  .cell p { color: var(--muted); font-size: 14.5px; }
+  .cell .kpi { font-family: var(--mono); font-size: 12px; color: var(--green); margin-top: 14px; display: block; }
+  @media (max-width: 860px) { .bento { grid-template-columns: repeat(2, 1fr); } .cell, .cell.wide { grid-column: span 1; } }
+  @media (max-width: 560px) { .bento { grid-template-columns: 1fr; } .cell, .cell.wide { grid-column: span 1; } }
+
+  /* ---------- terminal ---------- */
+  .term-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; }
+  @media (max-width: 900px) { .term-wrap { grid-template-columns: 1fr; } }
+  .term {
+    background: #0a0d12; border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: 0 30px 80px -20px rgba(0,0,0,0.8); overflow: hidden;
+  }
+  .term-bar { display: flex; gap: 7px; padding: 12px 14px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.03); }
+  .term-bar span { width: 11px; height: 11px; border-radius: 50%; }
+  .term-body {
+    padding: 22px 24px; font-family: var(--mono); font-size: 13px; line-height: 1.9;
+    min-height: 300px; color: var(--muted);
+  }
+  .term-body .ln { white-space: pre-wrap; }
+  .term-body .p { color: var(--green); }
+  .term-body .ok { color: #34d977; }
+  .term-body .dim { color: var(--dim); }
+  .term-body .w { color: #e8edf4; }
+  .caret { display: inline-block; width: 8px; height: 15px; background: var(--green); vertical-align: -2px; animation: pulse 1s infinite; }
+
+  /* ---------- steps ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 56px; counter-reset: step; }
+  .step {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 30px 26px;
+    position: relative; transition: border-color .2s, transform .2s;
+  }
+  .step:hover { border-color: rgba(34,197,94,0.35); transform: translateY(-3px); }
+  .step .num {
+    font-family: var(--mono); font-size: 13px; color: var(--green);
+    width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+    background: var(--green-soft); border: 1px solid rgba(34,197,94,0.25); margin-bottom: 20px;
+  }
+  .step h3 { font-size: 17px; font-weight: 650; margin-bottom: 8px; }
+  .step p { color: var(--muted); font-size: 14.5px; }
+  @media (max-width: 860px) { .steps { grid-template-columns: 1fr; } }
+
+  /* ---------- cta ---------- */
+  .cta-final {
+    text-align: center; border: 1px solid var(--border); border-radius: 24px;
+    padding: 90px 30px; position: relative; overflow: hidden;
+    background:
+      radial-gradient(600px 300px at 50% 0%, rgba(34,197,94,0.13), transparent 70%),
+      var(--bg-2);
+  }
+  .cta-final h2 { margin-bottom: 14px; }
+  .cta-final .sec-sub { margin: 0 auto 36px; }
+
+  footer { border-top: 1px solid var(--border); padding: 44px 0 60px; }
+  .foot-inner { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; color: var(--dim); font-size: 13.5px; }
+  .foot-inner a { color: var(--muted); text-decoration: none; }
+  .foot-inner a:hover { color: var(--text); }
+
+  /* ---------- reveal ---------- */
+  .rv { opacity: 0; transform: translateY(26px); transition: opacity .7s ease, transform .7s ease; }
+  .rv.in { opacity: 1; transform: none; }
+  .rv.d1 { transition-delay: .08s; } .rv.d2 { transition-delay: .16s; } .rv.d3 { transition-delay: .24s; }
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <nav>
-      <div class="logo"><span class="dot"></span>TorrentFlow</div>
-      <a class="gh" href="https://github.com/seNkoKG/TorrentFlow">GitHub &rarr;</a>
-    </nav>
+  <div class="backdrop"><div class="aurora a1"></div><div class="aurora a2"></div><div class="aurora a3"></div></div>
+  <div class="grid-lines"></div>
 
-    <header>
-      <h1>Download torrents.<br /><span>Not bloat.</span></h1>
-      <p class="sub">
-        A fast, lightweight torrent client for Windows.
-        Native binary, instant startup, and you see every file before it hits your disk.
-      </p>
-      <div class="cta">
-        <a class="btn btn-primary" href="https://github.com/seNkoKG/TorrentFlow/releases/latest">Download for Windows</a>
-        <a class="btn btn-ghost" href="https://github.com/seNkoKG/TorrentFlow">View source</a>
+  <nav>
+    <div class="wrap nav-inner">
+      <a class="logo" href="#">
+        <span class="logo-mark"><svg viewBox="0 0 100 100"><path d="M50 18 28 54h16l-4 28 30-40H52l6-24z"/></svg></span>
+        TorrentFlow
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#streaming">Streaming</a>
+        <a href="#download">Download</a>
+        <a href="https://github.com/seNkoKG/TorrentFlow" target="_blank" rel="noopener">GitHub</a>
+        <a class="nav-cta" href="https://github.com/seNkoKG/TorrentFlow/releases/latest" target="_blank" rel="noopener">Download</a>
       </div>
-      <p class="meta">Free · Open source · No ads, no telemetry</p>
-    </header>
-
-    <section class="features">
-      <div class="grid">
-        <div class="card">
-          <div class="ico">🪶</div>
-          <h3>Featherweight</h3>
-          <p>No Electron. A compact native binary that starts in under a second.</p>
-        </div>
-        <div class="card">
-          <div class="ico">👀</div>
-          <h3>Preview first</h3>
-          <p>Paste a magnet or drop a .torrent to inspect the name, file list and total size before adding.</p>
-        </div>
-        <div class="card">
-          <div class="ico">🛡️</div>
-          <h3>No duplicates</h3>
-          <p>Torrents are tracked by info-hash, so the same content can never be added twice.</p>
-        </div>
-        <div class="card">
-          <div class="ico">📈</div>
-          <h3>Live progress</h3>
-          <p>Per-torrent progress bars with download and upload speeds and peer counts in real time.</p>
-        </div>
-      </div>
-    </section>
-
-    <div class="stack">
-      Built with <code>Tauri 2</code> · <code>Rust</code> · <code>librqbit</code> · <code>React 19</code>
     </div>
+  </nav>
 
-    <footer>
-      <span>TorrentFlow — MIT licensed.</span>
-      <span><a href="https://github.com/seNkoKG/TorrentFlow">Source on GitHub</a></span>
-    </footer>
+  <header class="wrap">
+    <div class="pill rv in"><span class="dot"></span>Version <span class="ver" id="ver">v0.1.0</span> — out now for Windows</div>
+    <h1 class="rv in">Torrents, at<br /><span class="grad">full speed.</span></h1>
+    <p class="sub rv in d1">
+      A native Windows torrent client that <strong>streams while it downloads</strong>,
+      shows you every file before it lands, and stays out of your way.
+      <strong>19 MB.</strong> No Electron. No ads. No telemetry.
+    </p>
+    <div class="cta-row rv in d2">
+      <a class="btn btn-primary" href="https://github.com/seNkoKG/TorrentFlow/releases/latest" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24"><path d="M12 3v10.6l3.3-3.3 1.4 1.4L12 16.4l-4.7-4.7 1.4-1.4L12 13.6V3zM5 19h14v2H5z"/></svg>
+        Download for Windows
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/seNkoKG/TorrentFlow" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.09.66-.22.66-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.58 9.58 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.16.58.67.48A10 10 0 0 0 22 12 10 10 0 0 0 12 2z"/></svg>
+        View source
+      </a>
+    </div>
+    <p class="hero-note rv in d3">free · open source · MIT licensed</p>
+
+    <div class="shot-zone rv in d3">
+      <div class="float-card fc-1">
+        <div class="big">19 MB</div>
+        <div class="small">installer, start in under a second</div>
+      </div>
+      <div class="shot-frame">
+        <div class="shot-bar"><span class="r"></span><span class="y"></span><span class="g"></span><span class="addr">torrentflow — native window</span></div>
+        <img src="assets/app.png" alt="TorrentFlow application window showing active torrents with live progress" />
+      </div>
+      <div class="float-card fc-2">
+        <div class="big"><span class="green">●</span> Streaming ready</div>
+        <div class="small">watch in VLC while pieces arrive</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="stats rv">
+    <div class="wrap stats-inner">
+      <div class="stat"><div class="n">19<em>MB</em></div><div class="l">installer size</div></div>
+      <div class="stat"><div class="n">&lt;1<em>s</em></div><div class="l">cold start</div></div>
+      <div class="stat"><div class="n">0</div><div class="l">telemetry, ever</div></div>
+      <div class="stat"><div class="n">MIT</div><div class="l">open source license</div></div>
+    </div>
   </div>
+
+  <section id="features" class="wrap">
+    <span class="sec-tag rv">FEATURES</span>
+    <h2 class="rv">Everything a modern<br />client should do.</h2>
+    <p class="sec-sub rv d1">Built on Rust and librqbit with a React interface. No browser engine inside, no memory hog, no upsells.</p>
+
+    <div class="bento">
+      <div class="cell wide rv">
+        <div class="ico">🎬</div>
+        <h3>Stream while downloading</h3>
+        <p>Watch any video torrent in VLC the moment enough pieces arrive. Sequential fetching with subtitle priority — no waiting for the full file.</p>
+        <span class="kpi">→ one click, straight to VLC</span>
+      </div>
+      <div class="cell wide rv d1">
+        <div class="ico">👁️</div>
+        <h3>Preview before you commit</h3>
+        <p>Paste a magnet or drop a .torrent and inspect the real name, full file list and exact size before a single byte downloads.</p>
+        <span class="kpi">→ zero surprises</span>
+      </div>
+      <div class="cell rv">
+        <div class="ico">🛡️</div>
+        <h3>Duplicate guard</h3>
+        <p>Everything is tracked by info-hash. The same torrent can never be added twice.</p>
+      </div>
+      <div class="cell rv d1">
+        <div class="ico">🎛️</div>
+        <h3>File-level control</h3>
+        <p>Pick exactly which files to grab. Subtitles and video headers are prioritized automatically.</p>
+      </div>
+      <div class="cell rv d2">
+        <div class="ico">⚡</div>
+        <h3>DHT native</h3>
+        <p>Trackerless downloads work out of the box. Hundreds of DHT nodes connected in seconds.</p>
+      </div>
+      <div class="cell rv">
+        <div class="ico">📂</div>
+        <h3>One-click reveal</h3>
+        <p>Jump straight to any download in Explorer from the details panel or the row menu.</p>
+      </div>
+      <div class="cell rv d1">
+        <div class="ico">🌙</div>
+        <h3>Designed dark</h3>
+        <p>A custom title bar, crisp typography and a UI that respects your eyes at 2 AM.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="streaming" class="wrap">
+    <div class="term-wrap">
+      <div class="rv">
+        <span class="sec-tag">HOW IT FEELS</span>
+        <h2>From magnet to media<br />in one paste.</h2>
+        <p class="sec-sub">No wizards, no tabs of settings, no "are you sure". Paste, preview, go. TorrentFlow handles the protocol plumbing so you never think about it.</p>
+      </div>
+      <div class="term rv d1">
+        <div class="term-bar"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+        <div class="term-body" id="term"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <span class="sec-tag rv">WORKFLOW</span>
+    <h2 class="rv">Three steps. That's the whole app.</h2>
+    <div class="steps">
+      <div class="step rv">
+        <div class="num">01</div>
+        <h3>Paste or drop</h3>
+        <p>Magnet link or .torrent file. TorrentFlow fetches metadata instantly over DHT.</p>
+      </div>
+      <div class="step rv d1">
+        <div class="num">02</div>
+        <h3>Pick your files</h3>
+        <p>See every file with its size. Take everything or just the one you want.</p>
+      </div>
+      <div class="step rv d2">
+        <div class="num">03</div>
+        <h3>Watch or wait</h3>
+        <p>Stream to VLC while it downloads, or let it finish and open the folder in one click.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="download" class="wrap">
+    <div class="cta-final rv">
+      <span class="sec-tag">DOWNLOAD</span>
+      <h2>Ready in 30 seconds.</h2>
+      <p class="sec-sub">Grab <span id="ver2" style="font-family:var(--mono);color:var(--green)">v0.1.0</span>, run the installer, paste a magnet. That's it.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/seNkoKG/TorrentFlow/releases/latest" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24"><path d="M12 3v10.6l3.3-3.3 1.4 1.4L12 16.4l-4.7-4.7 1.4-1.4L12 13.6V3zM5 19h14v2H5z"/></svg>
+          TorrentFlow for Windows
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/seNkoKG/TorrentFlow/releases" target="_blank" rel="noopener">All releases</a>
+      </div>
+      <p class="hero-note" style="margin-top:20px">windows 10/11 · x64 · ~19 MB</p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap foot-inner">
+      <span>TorrentFlow — MIT licensed. Use responsibly, respect copyright.</span>
+      <span><a href="https://github.com/seNkoKG/TorrentFlow">GitHub</a> · <a href="https://github.com/seNkoKG/TorrentFlow/releases">Releases</a> · <a href="https://github.com/seNkoKG/TorrentFlow/issues">Issues</a></span>
+    </div>
+  </footer>
+
+<script>
+  const io = new IntersectionObserver(
+    (es) => es.forEach((e) => e.isIntersecting && e.target.classList.add("in")),
+    { threshold: 0.12 },
+  );
+  document.querySelectorAll(".rv").forEach((el) => io.observe(el));
+
+  document.querySelectorAll(".cell").forEach((c) =>
+    c.addEventListener("mousemove", (e) => {
+      const r = c.getBoundingClientRect();
+      c.style.setProperty("--mx", ((e.clientX - r.left) / r.width) * 100 + "%");
+    }),
+  );
+
+  fetch("https://api.github.com/repos/seNkoKG/TorrentFlow/releases/latest")
+    .then((r) => r.ok ? r.json() : null)
+    .then((d) => {
+      if (!d || !d.tag_name) return;
+      document.getElementById("ver").textContent = d.tag_name;
+      document.getElementById("ver2").textContent = d.tag_name;
+    })
+    .catch(() => {});
+
+  const LINES = [
+    ["p", "$ torrentflow add magnet:?xt=urn:btih:08ada5a7…"],
+    ["dim", "resolving metadata via DHT … 267 nodes"],
+    ["w",  "Sintel · 11 files · 123.3 MB"],
+    ["dim", "added — sequential mode, subtitles first"],
+    ["",   ""],
+    ["p", "$ torrentflow status"],
+    ["ok", "  Sintel        seeding   100%   ▲ 1.2 MB/s"],
+    ["ok", "  Big Buck Bunny  87%    4.8 MB/s   ETA 00:41"],
+    ["dim", "stream ready → opening VLC …"],
+  ];
+  const term = document.getElementById("term");
+  let li = 0, ci = 0, started = false;
+  function tick() {
+    if (li >= LINES.length) {
+      setTimeout(() => { term.innerHTML = ""; li = 0; ci = 0; tick(); }, 6000);
+      return;
+    }
+    const [cls, text] = LINES[li];
+    let line = term.querySelector(`.ln[data-i="${li}"]`);
+    if (!line) {
+      line = document.createElement("div");
+      line.className = "ln " + cls;
+      line.dataset.i = li;
+      term.appendChild(line);
+    }
+    ci += 1 + Math.floor(Math.random() * 3);
+    if (ci >= text.length) {
+      line.textContent = text;
+      li++; ci = 0;
+      setTimeout(tick, text === "" ? 120 : 340);
+    } else {
+      line.innerHTML = text.slice(0, ci) + (li === LINES.length - 1 ? '<span class="caret"></span>' : "");
+      setTimeout(tick, 24);
+    }
+  }
+  new IntersectionObserver((es, o) => {
+    if (es[0].isIntersecting && !started) { started = true; tick(); o.disconnect(); }
+  }, { threshold: 0.3 }).observe(term);
+</script>
 </body>
 </html>

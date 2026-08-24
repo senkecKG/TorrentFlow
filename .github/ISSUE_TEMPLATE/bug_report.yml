@@ -1,0 +1,57 @@
+name: Bug report
+description: Something broke. Tell us what, where, and how.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Describe the bug. What did you expect to happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add magnet '...'
+        2. Click '...'
+        3. See error
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Adding torrents (magnet / .torrent)
+        - Download / upload progress
+        - VLC streaming
+        - Files / file selection
+        - UI / layout
+        - Settings
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TorrentFlow version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Windows version
+      options:
+        - Windows 11
+        - Windows 10
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Anything that helps. Screenshots of the UI are gold.
