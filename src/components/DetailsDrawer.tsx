@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   Clipboard,
+  FolderOpen,
   Loader2,
   Play,
   Subtitles,
@@ -15,6 +16,7 @@ import {
   streamUrl,
   suggestVideoFile,
 } from "../lib/api";
+import { openPath } from "@tauri-apps/plugin-opener";
 import {
   errMsg,
   formatBytes,
@@ -414,18 +416,30 @@ export function DetailsDrawer({
                 <span className="font-mono text-[11px] text-ink-2">{t.infoHash}</span>
               </Def>
               <Def label="Save location">
-                <button
-                  title={`Click to copy · ${t.savePath}`}
-                  onClick={() =>
-                    navigator.clipboard.writeText(t.savePath).then(
-                      () => toast("success", "Path copied"),
-                      () => {},
-                    )
-                  }
-                  className="max-w-full truncate hover:text-accent"
-                >
-                  {truncMiddle(t.savePath, 34)}
-                </button>
+                <span className="flex items-center justify-end gap-1.5">
+                  <button
+                    title={`Click to copy · ${t.savePath}`}
+                    onClick={() =>
+                      navigator.clipboard.writeText(t.savePath).then(
+                        () => toast("success", "Path copied"),
+                        () => {},
+                      )
+                    }
+                    className="max-w-full truncate hover:text-accent"
+                  >
+                    {truncMiddle(t.savePath, 34)}
+                  </button>
+                  <button
+                    aria-label="Open folder in Explorer"
+                    title="Open in Explorer"
+                    onClick={() =>
+                      openPath(t.savePath).catch((e) => toast("error", "Could not open folder", errMsg(e)))
+                    }
+                    className="icon-btn h-5 w-5 shrink-0"
+                  >
+                    <FolderOpen size={13} />
+                  </button>
+                </span>
               </Def>
             </div>
 
