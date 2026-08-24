@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
-use crate::engine::types::{SnapshotDto, SourceKind};
+use crate::engine::types::{PreviewSourceDto, SnapshotDto, SourceKind};
 use crate::engine::Engine;
 use crate::settings::Settings;
 use crate::vlc;
@@ -40,23 +40,24 @@ pub fn get_snapshot(state: State<AppState>) -> SnapshotDto {
 }
 
 #[tauri::command]
-pub async fn add_source(
-    state: State<'_, AppState>,
-    source: SourceKind,
-    download_dir: Option<String>,
-) -> Result<(usize, bool), String> {
+pub async fn preview_source(state: State<'_, AppState>, source: SourceKind) -> Result<PreviewSourceDto, String> {
     state
         .engine
-        .add_source(source, download_dir)
+        .preview_source(source)
         .await
         .map_err(|e| format!("{e:#}"))
 }
 
 #[tauri::command]
-pub async fn wait_metadata(state: State<'_, AppState>, id: usize) -> Result<(), String> {
+pub async fn add_source(
+    state: State<'_, AppState>,
+    source: SourceKind,
+    download_dir: Option<String>,
+    files: Option<Vec<usize>>,
+) -> Result<(usize, bool), String> {
     state
         .engine
-        .wait_metadata(id, 90)
+        .add_source(source, download_dir, files)
         .await
         .map_err(|e| format!("{e:#}"))
 }
@@ -236,4 +237,9 @@ pub fn suggest_video_file(
         .engine
         .suggest_video(torrent_id)
         .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+pub fn take_pending_source() -> Option<serde_json::Value> {
+    crate::PENDING_SOURCE.lock().unwrap().take()
 }

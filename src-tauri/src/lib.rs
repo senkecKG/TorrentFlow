@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager, WindowEvent,
+    Emitter, Manager, WindowEvent,
 };
 use tauri_plugin_autostart::MacosLauncher;
 
@@ -17,14 +17,32 @@ use commands::AppState;
 use engine::Engine;
 use settings::Settings;
 
+static PENDING_SOURCE: Mutex<Option<serde_json::Value>> = Mutex::new(None);
+
+fn source_from_args<I: IntoIterator<Item = String>>(args: I) -> Option<serde_json::Value> {
+    for a in args {
+        if a.starts_with("magnet:") {
+            return Some(serde_json::json!({ "kind": "magnet", "url": a }));
+        }
+        if a.to_lowercase().ends_with(".torrent") {
+            return Some(serde_json::json!({ "kind": "torrentPath", "path": a }));
+        }
+    }
+    None
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
                 let _ = win.unminimize();
                 let _ = win.set_focus();
+            }
+            if let Some(src) = source_from_args(args.iter().cloned()) {
+                *PENDING_SOURCE.lock().unwrap() = Some(src.clone());
+                let _ = app.emit("app://source", src);
             }
         }))
         .plugin(tauri_plugin_opener::init())
@@ -38,6 +56,9 @@ pub fn run() {
     builder
         .setup(|app| {
             let handle = app.handle().clone();
+            if let Some(src) = source_from_args(std::env::args().skip(1)) {
+                *PENDING_SOURCE.lock().unwrap() = Some(src);
+            }
             let settings =
                 std::sync::Arc::new(Mutex::new(Settings::load(&settings::config_dir(&handle))));
 
@@ -106,8 +127,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_snapshot,
+            commands::preview_source,
             commands::add_source,
-            commands::wait_metadata,
             commands::pause_torrent,
             commands::resume_torrent,
             commands::remove_torrent,
@@ -124,6 +145,7 @@ pub fn run() {
             commands::stream_url,
             commands::buffer_status,
             commands::suggest_video_file,
+            commands::take_pending_source,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, HardDrive, Loader2 } from "lucide-react";
-import type { Settings, Source, TorrentDto } from "../lib/types";
+import type { PreviewSource, Settings, Source } from "../lib/types";
 import {
   addSource,
   defaultDownloadDir,
   diskFreeBytes,
   getSettings,
-  getSnapshot,
-  removeTorrent,
-  waitMetadata,
+  previewSource,
 } from "../lib/api";
 import { errMsg, formatBytes, truncMiddle } from "../lib/format";
 import type { ToastKind } from "./Toaster";
@@ -32,12 +30,11 @@ export function AddTorrentModal({
   const [magnet, setMagnet] = useState("");
   const [downloadDir, setDownloadDir] = useState<string | null>(null);
   const [freeSpace, setFreeSpace] = useState<number | null>(null);
-  const [torrentId, setTorrentId] = useState<number | null>(null);
-  const [meta, setMeta] = useState<TorrentDto | null>(null);
+  const [pendingSrc, setPendingSrc] = useState<Source | null>(null);
+  const [meta, setMeta] = useState<PreviewSource | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const cancelled = useRef(false);
   const started = useRef(false);
 
   useEffect(() => {
@@ -62,27 +59,21 @@ export function AddTorrentModal({
     if (busy || step !== "source") return;
     setBusy(true);
     setFetchError(null);
+    setStep("fetching");
     try {
-      const [id, duplicate] = await addSource(src, downloadDir);
-      if (duplicate) {
+      const p = await previewSource(src);
+      if (p.duplicate && p.id != null) {
         toast("info", "Already in your list", "Selecting the existing torrent.");
-        onAdded(id);
+        onAdded(p.id);
         return;
       }
-      setTorrentId(id);
-      setStep("fetching");
-      await waitMetadata(id);
-      const snap = await getSnapshot();
-      const t = snap.torrents.find((x) => x.id === id);
-      if (!t) throw new Error("Torrent disappeared unexpectedly.");
-      setMeta(t);
-      setSelected(new Set(t.files.map((f) => f.index)));
+      setPendingSrc(src);
+      setMeta(p);
+      setSelected(new Set(p.files.map((f) => f.index)));
       setStep("files");
     } catch (e) {
-      if (!cancelled.current) {
-        setFetchError(errMsg(e));
-        toast("error", "Could not read torrent", errMsg(e));
-      }
+      setFetchError(errMsg(e));
+      toast("error", "Could not read torrent", errMsg(e));
     } finally {
       setBusy(false);
     }
@@ -94,35 +85,15 @@ export function AddTorrentModal({
     submitSource(initialSource);
   }, []);
 
-  function cancelFetching() {
-    if (torrentId == null) return onClose();
-    cancelled.current = true;
-    removeTorrent(torrentId, false)
-      .then(onClose)
-      .catch(() => onClose());
-  }
-
-  function cancelFiles() {
-    if (torrentId != null && !cancelled.current) {
-      cancelled.current = true;
-      removeTorrent(torrentId, false)
-        .then(onClose)
-        .catch(() => onClose());
-    } else {
-      onClose();
-    }
-  }
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
-      if (step === "source") onClose();
-      else cancelFetching();
+      onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [step, torrentId]);
+  }, []);
 
   async function browseFile() {
     const path = await open({
@@ -138,6 +109,26 @@ export function AddTorrentModal({
       else next.add(index);
       return next;
     });
+  }
+
+  async function confirmAdd() {
+    if (busy || !meta || !pendingSrc) return;
+    setBusy(true);
+    try {
+      const [id, duplicate] = await addSource(
+        pendingSrc,
+        downloadDir,
+        selected.size === meta.files.length ? null : [...selected],
+      );
+      if (duplicate) {
+        toast("info", "Already in your list", "Selecting the existing torrent.");
+      }
+      onAdded(id);
+    } catch (e) {
+      toast("error", "Could not add torrent", errMsg(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -217,7 +208,7 @@ export function AddTorrentModal({
             ) : (
               <p className="text-[11px] text-ink-3">This can take a moment depending on swarm health.</p>
             )}
-            <button onClick={cancelFetching} className="btn-secondary mt-2">
+            <button onClick={onClose} className="btn-secondary mt-2">
               Cancel
             </button>
           </div>
@@ -266,10 +257,11 @@ export function AddTorrentModal({
               ))}
             </div>
             <div className="flex shrink-0 items-center justify-end gap-2 border-t border-hairline px-4 py-3">
-              <button onClick={cancelFiles} className="btn-secondary">
+              <button onClick={onClose} className="btn-secondary">
                 Cancel
               </button>
-              <button onClick={() => onAdded(meta.id)} disabled={selected.size === 0} className="btn-primary">
+              <button onClick={confirmAdd} disabled={selected.size === 0 || busy} className="btn-primary">
+                {busy ? <Loader2 size={14} className="animate-spin" /> : null}
                 Add and Start
               </button>
             </div>

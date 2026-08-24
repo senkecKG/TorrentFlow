@@ -11,8 +11,8 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use librqbit::limits::LimitsConfig;
 use librqbit::{
-    AddTorrent, AddTorrentOptions, Api, ManagedTorrent, Session, SessionOptions,
-    SessionPersistenceConfig,
+    AddTorrent, AddTorrentOptions, Api, ListenerMode, ListenerOptions, ManagedTorrent, Session,
+    SessionOptions, SessionPersistenceConfig,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -91,6 +91,11 @@ impl Engine {
                 download_bps: dl,
                 upload_bps: ul,
             },
+            listen: Some(ListenerOptions {
+                mode: ListenerMode::TcpAndUtp,
+                enable_upnp_port_forwarding: true,
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let default_dir = default_download_dir(settings.clone());
@@ -190,10 +195,99 @@ impl Engine {
         id.0.iter().map(|b| format!("{b:02x}")).collect()
     }
 
+    fn build_add(source: &SourceKind) -> Result<(AddTorrent<'static>, String)> {
+        Ok(match source {
+            SourceKind::Magnet { url } => (AddTorrent::from_url(url.clone()), url.clone()),
+            SourceKind::TorrentPath { path } => {
+                let bytes = std::fs::read(path).context("cannot read torrent file")?;
+                let name = std::path::Path::new(path)
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.clone());
+                (AddTorrent::from_bytes(bytes), name)
+            }
+        })
+    }
+
+    /// Fetch metadata without registering anything (librqbit list_only).
+    pub async fn preview_source(&self, source: SourceKind) -> Result<PreviewSourceDto> {
+        if let Some(hash) = source_info_hash(&source)? {
+            if let Some(existing) = self.find_by_hash(&hash) {
+                let known = existing
+                    .with_metadata(|md| {
+                        let files: Vec<PreviewFileDto> = md
+                            .file_infos
+                            .iter()
+                            .enumerate()
+                            .map(|(i, fi)| PreviewFileDto {
+                                index: i,
+                                path: fi.relative_filename.to_string_lossy().into_owned(),
+                                len: fi.len,
+                            })
+                            .collect();
+                        let total = files.iter().map(|f| f.len).sum();
+                        (
+                            md.info.name().map(|s| s.into_owned()).unwrap_or_default(),
+                            total,
+                            files,
+                        )
+                    })
+                    .ok();
+                let (name, total_bytes, files) = known.unwrap_or_default();
+                return Ok(PreviewSourceDto {
+                    duplicate: true,
+                    id: Some(existing.id()),
+                    name,
+                    info_hash: hash,
+                    total_bytes,
+                    files,
+                });
+            }
+        }
+
+        let (add, display_name) = Self::build_add(&source)?;
+        let opts = AddTorrentOptions {
+            list_only: true,
+            ..Default::default()
+        };
+        let response =
+            tokio::time::timeout(Duration::from_secs(90), self.0.session.add_torrent(add, Some(opts)))
+                .await
+                .context("timed out reading torrent information")?
+                .map_err(|e| friendly_add_error(source.clone(), e))?;
+
+        match response {
+            librqbit::AddTorrentResponse::ListOnly(r) => {
+                let files: Vec<PreviewFileDto> = r
+                    .info
+                    .iter_file_details()
+                    .enumerate()
+                    .map(|(i, fd)| PreviewFileDto {
+                        index: i,
+                        path: fd.filename.to_string(),
+                        len: fd.len,
+                    })
+                    .collect();
+                let name = r.info.name().map(|s| s.into_owned()).unwrap_or(display_name);
+                let total_bytes = files.iter().map(|f| f.len).sum();
+                Ok(PreviewSourceDto {
+                    duplicate: false,
+                    id: None,
+                    name,
+                    info_hash: Self::id20_hex(&r.info_hash),
+                    total_bytes,
+                    files,
+                })
+            }
+            _ => unreachable!(),
+        }
+    }
+
     pub async fn add_source(
         &self,
         source: SourceKind,
         download_dir_override: Option<String>,
+        only_files: Option<Vec<usize>>,
     ) -> Result<(usize, bool)> {
         // Duplicate detection before adding anything.
         if let Some(hash) = source_info_hash(&source)? {
@@ -206,37 +300,21 @@ impl Engine {
             .map(PathBuf::from)
             .unwrap_or_else(|| default_download_dir(self.0.settings.clone()));
 
-        let (add, display_name) = match &source {
-            SourceKind::Magnet { url } => (AddTorrent::from_url(url.clone()), url.clone()),
-            SourceKind::TorrentPath { path } => {
-                let bytes = std::fs::read(path).context("cannot read torrent file")?;
-                let name = std::fs::metadata(path)
-                    .ok()
-                    .map(|_| {
-                        std::path::Path::new(path)
-                            .file_name()
-                            .map(|f| f.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| path.clone())
-                    })
-                    .unwrap_or_else(|| path.clone());
-                (AddTorrent::from_bytes(bytes), name)
-            }
-        };
+        let (add, display_name) = Self::build_add(&source)?;
 
         let opts = AddTorrentOptions {
             overwrite: true,
             paused: false,
             output_folder: Some(folder.to_string_lossy().into_owned()),
+            only_files,
             ..Default::default()
         };
 
-        let response = self
-            .0
-            .session
-            .add_torrent(add, Some(opts))
-            .await
-            .map_err(|e| friendly_add_error(source.clone(), e))?;
-
+        let response =
+            tokio::time::timeout(Duration::from_secs(90), self.0.session.add_torrent(add, Some(opts)))
+                .await
+                .context("timed out reading torrent information")?
+                .map_err(|e| friendly_add_error(source.clone(), e))?;
         match response {
             librqbit::AddTorrentResponse::Added(_, handle)
             | librqbit::AddTorrentResponse::AlreadyManaged(_, handle) => {
@@ -750,24 +828,6 @@ impl Engine {
         };
         self.0.session.ratelimits.set_download_bps(dl);
         self.0.session.ratelimits.set_upload_bps(ul);
-    }
-
-    /// Wait until metadata is present (for magnet links). Returns Ok once resolved.
-    pub async fn wait_metadata(&self, id: usize, timeout_secs: u64) -> Result<()> {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
-        loop {
-            let handle = self.get_handle(id)?;
-            if has_metadata(&handle) {
-                return Ok(());
-            }
-            if tokio::time::Instant::now() >= deadline {
-                bail!("Could not fetch torrent information. Check your internet connection or try another link.");
-            }
-            if st(&handle.stats()) == "error" {
-                bail!("Could not fetch torrent information.");
-            }
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        }
     }
 
     /// Suggest the largest likely video file index for streaming.

@@ -75,6 +75,21 @@ export interface VlcStatus {
   path: string | null;
 }
 
+export interface PreviewFile {
+  index: number;
+  path: string;
+  len: number;
+}
+
+export interface PreviewSource {
+  duplicate: boolean;
+  id: number | null;
+  name: string;
+  infoHash: string;
+  totalBytes: number;
+  files: PreviewFile[];
+}
+
 export type Source =
   | { kind: "magnet"; url: string }
   | { kind: "torrentPath"; path: string };

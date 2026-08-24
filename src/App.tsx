@@ -13,6 +13,7 @@ import {
   removeTorrent,
   resumeTorrent,
   suggestVideoFile,
+  takePendingSource,
 } from "./lib/api";
 import { errMsg } from "./lib/format";
 import { useSnapshot } from "./hooks/useSnapshot";
@@ -67,6 +68,18 @@ function Shell() {
       unP.then((u) => u());
     };
   }, [toast]);
+
+  useEffect(() => {
+    takePendingSource().then((s) => {
+      if (s) setAddModal({ source: s });
+    });
+    const unP = listen<Source>("app://source", (e) => {
+      setAddModal({ source: e.payload });
+    });
+    return () => {
+      unP.then((u) => u());
+    };
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -172,11 +185,10 @@ function Shell() {
     <div className="flex h-full flex-col">
       <TitleBar />
       <div className="flex min-h-0 flex-1">
-        <NavRail view={view} onView={setView} collapsed={collapsedRail} session={snapshot?.session ?? null} />
+        <NavRail view={view} onView={setView} collapsed={collapsedRail} />
         <main className="flex min-w-0 flex-1 flex-col">
           <Header
             view={view}
-            session={snapshot?.session ?? null}
             onAdd={() => setAddModal({ source: null })}
           />
           {view === "settings" ? (

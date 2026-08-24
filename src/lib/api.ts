@@ -1,13 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Settings, Source, Snapshot, VlcStatus } from "./types";
+import type { PreviewSource, Settings, Source, Snapshot, VlcStatus } from "./types";
 
 export const getSnapshot = () => invoke<Snapshot>("get_snapshot");
 
 // backend returns a Rust tuple -> JSON array [id, duplicate]
-export const addSource = (source: Source, downloadDir: string | null) =>
-  invoke<[number, boolean]>("add_source", { source, downloadDir });
+export const addSource = (source: Source, downloadDir: string | null, files: number[] | null) =>
+  invoke<[number, boolean]>("add_source", { source, downloadDir, files });
 
-export const waitMetadata = (id: number) => invoke<void>("wait_metadata", { id });
+export const previewSource = (source: Source) =>
+  invoke<PreviewSource>("preview_source", { source });
 export const pauseTorrent = (id: number) => invoke<void>("pause_torrent", { id });
 export const resumeTorrent = (id: number) => invoke<void>("resume_torrent", { id });
 export const removeTorrent = (id: number, deleteFiles: boolean) =>
@@ -36,3 +37,5 @@ export const bufferStatus = (torrentId: number, fileId: number, position: number
   invoke<number>("buffer_status", { torrentId, fileId, position: Math.round(position) });
 export const suggestVideoFile = (torrentId: number) =>
   invoke<number | null>("suggest_video_file", { torrentId });
+
+export const takePendingSource = () => invoke<Source | null>("take_pending_source");

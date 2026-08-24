@@ -74,3 +74,22 @@ pub enum SourceKind {
     Magnet { url: String },
     TorrentPath { path: String },
 }
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewFileDto {
+    pub index: usize,
+    pub path: String,
+    pub len: u64,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewSourceDto {
+    pub duplicate: bool,
+    pub id: Option<usize>,
+    pub name: String,
+    pub info_hash: String,
+    pub total_bytes: u64,
+    pub files: Vec<PreviewFileDto>,
+}

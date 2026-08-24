@@ -1,6 +1,4 @@
-import { ArrowDownToLine, ArrowUp, CheckCircle2, LayoutList, Settings2 } from "lucide-react";
-import type { SessionStats } from "../lib/types";
-import { formatSpeed } from "../lib/format";
+import { ArrowDownToLine, CheckCircle2, LayoutList, Settings2 } from "lucide-react";
 
 export type View = "all" | "downloading" | "completed" | "settings";
 
@@ -14,17 +12,15 @@ export function NavRail({
   view,
   onView,
   collapsed,
-  session,
 }: {
   view: View;
   onView: (v: View) => void;
   collapsed: boolean;
-  session: SessionStats | null;
 }) {
   return (
     <nav
-      className={`flex shrink-0 flex-col gap-0.5 border-r border-hairline bg-panel py-3 ${
-        collapsed ? "w-14 px-2.5" : "w-[200px] px-3"
+      className={`flex shrink-0 flex-col gap-1 border-r border-hairline bg-panel py-4 ${
+        collapsed ? "w-14 px-2.5" : "w-[210px] px-3"
       }`}
     >
       {SECTIONS.map(({ id, label, icon: Icon }) => {
@@ -34,11 +30,11 @@ export function NavRail({
             key={id}
             onClick={() => onView(id)}
             title={collapsed ? label : undefined}
-            className={`group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors duration-150 ${
+            className={`group relative flex h-10 items-center gap-3 rounded-lg px-3 text-[13px] transition-colors duration-150 ${
               active ? "bg-raised font-medium text-ink" : "text-ink-2 hover:bg-white/[0.04] hover:text-ink"
             }`}
           >
-            {active && <span className="absolute top-1.5 bottom-1.5 left-0 w-[3px] rounded-full bg-accent" />}
+            {active && <span className="absolute top-2 bottom-2 left-0 w-[3px] rounded-full bg-accent" />}
             <Icon size={18} className="shrink-0" />
             {!collapsed && <span className="truncate">{label}</span>}
           </button>
@@ -47,37 +43,18 @@ export function NavRail({
       <button
         onClick={() => onView("settings")}
         title={collapsed ? "Settings" : undefined}
-        className={`group relative mt-auto flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors duration-150 ${
+        className={`group relative mt-auto flex h-10 items-center gap-3 rounded-lg px-3 text-[13px] transition-colors duration-150 ${
           view === "settings"
             ? "bg-raised font-medium text-ink"
             : "text-ink-2 hover:bg-white/[0.04] hover:text-ink"
         }`}
       >
         {view === "settings" && (
-          <span className="absolute top-1.5 bottom-1.5 left-0 w-[3px] rounded-full bg-accent" />
+          <span className="absolute top-2 bottom-2 left-0 w-[3px] rounded-full bg-accent" />
         )}
         <Settings2 size={18} className="shrink-0" />
         {!collapsed && <span>Settings</span>}
       </button>
-
-      {session && !collapsed && (
-        <div className="mt-3 space-y-1 border-t border-hairline px-1 pt-3 text-[11px] tabular-nums text-ink-2">
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5">
-              <ArrowDownToLine size={13} className="text-accent" />
-              DL
-            </span>
-            <span>{formatSpeed(session.downloadBps)}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5">
-              <ArrowUp size={13} className="text-slate-400" />
-              UL
-            </span>
-            <span>{formatSpeed(session.uploadBps)}</span>
-          </div>
-        </div>
-      )}
     </nav>
   );
 }
