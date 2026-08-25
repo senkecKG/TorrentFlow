@@ -11,7 +11,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?style=flat-square)](https://gitlab.com/senkec21/TorrentFlow/-/releases/permalink/latest)
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
 
-[Download](https://gitlab.com/senkec21/TorrentFlow/-/releases/permalink/latest) · [Website](https://senkec21.gitlab.io/torrentflow) · [Report a bug](https://gitlab.com/senkec21/TorrentFlow/-/issues)
+[Download](https://gitlab.com/senkec21/TorrentFlow/-/releases/permalink/latest) · [Website](https://torrentflow-8f317b.gitlab.io) · [Report a bug](https://gitlab.com/senkec21/TorrentFlow/-/issues)
 
 <img src="docs/assets/app.png" width="820" alt="TorrentFlow main window with live torrent progress" />
 
