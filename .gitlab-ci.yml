@@ -35,6 +35,24 @@ build-release:
         --header "JOB-TOKEN: $CI_JOB_TOKEN" `
         --upload-file $installer.FullName `
         "$env:CI_API_V4_URL/projects/$env:CI_PROJECT_ID/packages/generic/torrentflow/$env:CI_COMMIT_TAG/$($installer.Name)"
-    - release-cli create --name "TorrentFlow $env:CI_COMMIT_TAG" --tag-name $env:CI_COMMIT_TAG `
-        --description "Windows x64 installer (NSIS)." `
-        --assets-link "{\"name\":\"$($installer.Name)\",\"url\":\"$env:CI_API_V4_URL/projects/$env:CI_PROJECT_ID/packages/generic/torrentflow/$env:CI_COMMIT_TAG/$($installer.Name)\"}"
+    - |
+      $assetUrl = "$env:CI_API_V4_URL/projects/$env:CI_PROJECT_ID/packages/generic/torrentflow/$env:CI_COMMIT_TAG/$($installer.Name)"
+      $release = @{
+        name = "TorrentFlow $env:CI_COMMIT_TAG"
+        tag_name = $env:CI_COMMIT_TAG
+        description = "Windows x64 installer (NSIS)."
+        assets = @{
+          links = @(
+            @{
+              name = $installer.Name
+              url = $assetUrl
+            }
+          )
+        }
+      } | ConvertTo-Json -Depth 5
+      Invoke-RestMethod `
+        -Method Post `
+        -Uri "$env:CI_API_V4_URL/projects/$env:CI_PROJECT_ID/releases" `
+        -Headers @{ "JOB-TOKEN" = $env:CI_JOB_TOKEN } `
+        -ContentType "application/json" `
+        -Body $release

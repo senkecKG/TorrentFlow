@@ -250,11 +250,13 @@ impl Engine {
             list_only: true,
             ..Default::default()
         };
-        let response =
-            tokio::time::timeout(Duration::from_secs(90), self.0.session.add_torrent(add, Some(opts)))
-                .await
-                .context("timed out reading torrent information")?
-                .map_err(|e| friendly_add_error(source.clone(), e))?;
+        let response = tokio::time::timeout(
+            Duration::from_secs(90),
+            self.0.session.add_torrent(add, Some(opts)),
+        )
+        .await
+        .context("timed out reading torrent information")?
+        .map_err(|e| friendly_add_error(source.clone(), e))?;
 
         match response {
             librqbit::AddTorrentResponse::ListOnly(r) => {
@@ -268,7 +270,11 @@ impl Engine {
                         len: fd.len,
                     })
                     .collect();
-                let name = r.info.name().map(|s| s.into_owned()).unwrap_or(display_name);
+                let name = r
+                    .info
+                    .name()
+                    .map(|s| s.into_owned())
+                    .unwrap_or(display_name);
                 let total_bytes = files.iter().map(|f| f.len).sum();
                 Ok(PreviewSourceDto {
                     duplicate: false,
@@ -310,11 +316,13 @@ impl Engine {
             ..Default::default()
         };
 
-        let response =
-            tokio::time::timeout(Duration::from_secs(90), self.0.session.add_torrent(add, Some(opts)))
-                .await
-                .context("timed out reading torrent information")?
-                .map_err(|e| friendly_add_error(source.clone(), e))?;
+        let response = tokio::time::timeout(
+            Duration::from_secs(90),
+            self.0.session.add_torrent(add, Some(opts)),
+        )
+        .await
+        .context("timed out reading torrent information")?
+        .map_err(|e| friendly_add_error(source.clone(), e))?;
         match response {
             librqbit::AddTorrentResponse::Added(_, handle)
             | librqbit::AddTorrentResponse::AlreadyManaged(_, handle) => {
@@ -591,8 +599,29 @@ impl Engine {
             let id = handle.id();
             let stats = handle.stats();
             let hex = Self::id20_hex(&handle.info_hash());
-            let entry = self.meta_entry(&hex);
+            let mut entry = self.meta_entry(&hex);
             let has_md = has_metadata(handle);
+
+            let resumed_incomplete_download = entry.completed_at.is_some()
+                && st(&stats) == "live"
+                && !stats.finished
+                && stats.total_bytes > 0
+                && stats.progress_bytes < stats.total_bytes;
+            if resumed_incomplete_download {
+                let cleared = {
+                    let mut meta = self.0.meta.lock().unwrap();
+                    clear_completion(&mut meta, &hex)
+                };
+                if cleared {
+                    entry.completed_at = None;
+                    self.save_meta();
+                    self.log(
+                        id,
+                        "warn",
+                        "Downloaded data is incomplete; resuming download",
+                    );
+                }
+            }
 
             if st(&stats) == "live" {
                 total_dl += stats
@@ -651,18 +680,21 @@ impl Engine {
                 self.mark_completed(&hex, id, &name);
             }
 
+            let hold_completed_progress = entry.completed_at.is_some() && state == "checking";
+            let (progress, progress_bytes) = display_progress(
+                stats.progress_bytes,
+                stats.total_bytes,
+                hold_completed_progress,
+            );
+
             torrents.push(TorrentDto {
                 id,
                 name,
                 info_hash: hex,
                 state,
                 error: stats.error.clone(),
-                progress: if stats.total_bytes > 0 {
-                    stats.progress_bytes as f64 / stats.total_bytes as f64
-                } else {
-                    0.0
-                },
-                progress_bytes: stats.progress_bytes,
+                progress,
+                progress_bytes,
                 total_bytes: stats.total_bytes,
                 download_bps: stats
                     .live
@@ -717,12 +749,12 @@ impl Engine {
     }
 
     fn mark_completed(&self, hex: &str, id: usize, name: &str) {
-        {
+        let newly_completed = {
             let mut meta = self.0.meta.lock().unwrap();
-            let e = meta.entries.entry(hex.to_string()).or_default();
-            if e.completed_at.is_none() {
-                e.completed_at = Some(now_ms());
-            }
+            record_completion(&mut meta, hex, now_ms())
+        };
+        if !newly_completed {
+            return;
         }
         self.save_meta();
         self.log(id, "success", "Download complete");
@@ -958,6 +990,39 @@ fn state_transitioned_to_finished(
     !prev && finished
 }
 
+fn record_completion(meta: &mut MetaStore, hex: &str, completed_at: i64) -> bool {
+    let entry = meta.entries.entry(hex.to_string()).or_default();
+    if entry.completed_at.is_some() {
+        return false;
+    }
+    entry.completed_at = Some(completed_at);
+    true
+}
+
+fn clear_completion(meta: &mut MetaStore, hex: &str) -> bool {
+    let Some(entry) = meta.entries.get_mut(hex) else {
+        return false;
+    };
+    if entry.completed_at.take().is_none() {
+        return false;
+    }
+    true
+}
+
+fn display_progress(
+    progress_bytes: u64,
+    total_bytes: u64,
+    hold_completed_progress: bool,
+) -> (f64, u64) {
+    if hold_completed_progress {
+        return (1.0, total_bytes);
+    }
+    if total_bytes == 0 {
+        return (0.0, progress_bytes);
+    }
+    (progress_bytes as f64 / total_bytes as f64, progress_bytes)
+}
+
 fn parse_eta_secs(human: &str) -> u64 {
     // human like "1h 2m" / "3m 4s" / "12s"
     let mut secs = 0u64;
@@ -1065,4 +1130,35 @@ fn dirs_download() -> PathBuf {
 
 fn meta_order_len(engine: &Engine) -> usize {
     engine.0.meta.lock().unwrap().order.len().saturating_sub(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clear_completion, display_progress, record_completion};
+    use crate::settings::MetaStore;
+
+    #[test]
+    fn completion_is_recorded_only_once() {
+        let mut meta = MetaStore::default();
+
+        assert!(record_completion(&mut meta, "abc123", 100));
+        assert!(!record_completion(&mut meta, "abc123", 200));
+        assert_eq!(meta.entries["abc123"].completed_at, Some(100));
+    }
+
+    #[test]
+    fn completed_verification_keeps_progress_full() {
+        assert_eq!(display_progress(25, 100, true), (1.0, 100));
+        assert_eq!(display_progress(25, 100, false), (0.25, 25));
+    }
+
+    #[test]
+    fn incomplete_download_clears_previous_completion() {
+        let mut meta = MetaStore::default();
+        assert!(record_completion(&mut meta, "abc123", 100));
+
+        assert!(clear_completion(&mut meta, "abc123"));
+        assert!(!clear_completion(&mut meta, "abc123"));
+        assert_eq!(meta.entries["abc123"].completed_at, None);
+    }
 }

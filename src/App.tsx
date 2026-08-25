@@ -35,7 +35,9 @@ const DOWNLOADING_STATES = new Set(["fetching_metadata", "checking", "downloadin
 
 function matchesFilter(t: TorrentDto, view: Exclude<View, "settings">): boolean {
   if (view === "all") return true;
-  if (view === "downloading") return DOWNLOADING_STATES.has(t.state) || t.queued;
+  if (view === "downloading") {
+    return t.completedAt == null && (DOWNLOADING_STATES.has(t.state) || t.queued);
+  }
   return t.state === "seeding" || t.progress >= 1 || t.completedAt != null;
 }
 
