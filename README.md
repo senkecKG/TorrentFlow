@@ -6,13 +6,12 @@
 
 **A fast, lightweight torrent client for Windows. Stream while you download.**
 
-[![Release](https://img.shields.io/github/v/release/seNkoKG/TorrentFlow?style=flat-square&color=22c55e)](https://github.com/seNkoKG/TorrentFlow/releases/latest)
-[![Build](https://img.shields.io/github/actions/workflow/status/seNkoKG/TorrentFlow/release.yml?branch=main&style=flat-square&label=build)](https://github.com/seNkoKG/TorrentFlow/actions/workflows/release.yml)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?style=flat-square)](https://github.com/seNkoKG/TorrentFlow/releases/latest)
-[![License](https://img.shields.io/github/license/seNkoKG/TorrentFlow?style=flat-square)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/seNkoKG/TorrentFlow?style=flat-square&color=facc15)](https://github.com/seNkoKG/TorrentFlow/stargazers)
+[![Release](https://img.shields.io/gitlab/v/release/senkec21/TorrentFlow?gitlab_url=https%3A%2F%2Fgitlab.com&style=flat-square&color=22c55e)](https://gitlab.com/senkec21/TorrentFlow/-/releases/permalink/latest)
+[![Pipeline](https://gitlab.com/senkec21/TorrentFlow/badges/main/pipeline.svg?style=flat-square)](https://gitlab.com/senkec21/TorrentFlow/-/commits/main)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?style=flat-square)](https://gitlab.com/senkec21/TorrentFlow/-/releases/permalink/latest)
+[![License](https://img.shields.io/badge/license-MIT-22c55e?style=flat-square)](LICENSE)
 
-[Download](https://github.com/seNkoKG/TorrentFlow/releases/latest) · [Website](https://senkokg.github.io/TorrentFlow/) · [Report a bug](https://github.com/seNkoKG/TorrentFlow/issues)
+[Download](https://gitlab.com/senkec21/TorrentFlow/-/releases/permalink/latest) · [Website](https://senkec21.gitlab.io/torrentflow) · [Report a bug](https://gitlab.com/senkec21/TorrentFlow/-/issues)
 
 <img src="docs/assets/app.png" width="820" alt="TorrentFlow main window with live torrent progress" />
 
@@ -36,20 +35,20 @@ Most torrent clients are either ancient (uTorrent, 2005 UX) or bloated (Electron
 
 ## Install
 
-Grab the installer from [**Releases**](https://github.com/seNkoKG/TorrentFlow/releases/latest):
+Grab the installer from [**Releases**](https://gitlab.com/senkec21/TorrentFlow/-/releases/permalink/latest):
 
 ```
-TorrentFlow_x.y.z_x64-setup.exe   (~19 MB, NSIS)
+TorrentFlow_x.y.z_x64-setup.exe   (~5 MB, NSIS)
 ```
 
-Windows 10/11, x64. No admin rights required for per-user installs.
+Windows 10/11, x64.
 
 ## Build from source
 
 **Requirements:** Node.js 20+, Rust stable, npm.
 
 ```sh
-git clone https://github.com/seNkoKG/TorrentFlow
+git clone https://gitlab.com/senkec21/TorrentFlow
 cd TorrentFlow
 npm install
 npm run tauri dev      # development with hot reload
@@ -87,13 +86,14 @@ src-tauri/
   src/engine/         librqbit session wrapper + DTO mapping
   src/commands.rs     IPC command surface
   src/lib.rs          Tauri setup, plugins
-docs/                 GitHub Pages landing site
+docs/                 Landing page (published via GitLab Pages)
 ```
 
 </details>
 
 ## Roadmap
 
+- [ ] Torrent list persistence across restarts
 - [ ] RSS feeds with auto-download rules
 - [ ] Sequential download toggle in the UI
 - [ ] Speed limits and scheduling
@@ -101,7 +101,7 @@ docs/                 GitHub Pages landing site
 
 ## Contributing
 
-Issues and PRs welcome. Keep PRs small and focused; run `npm run build` (typecheck + bundle) before submitting.
+Issues and merge requests welcome. Keep MRs small and focused; run `npm run build` (typecheck + bundle) before submitting.
 
 ## License
 
