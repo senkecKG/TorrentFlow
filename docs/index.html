@@ -4,272 +4,234 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TorrentFlow — the torrent client that gets out of your way</title>
-<meta name="description" content="TorrentFlow is a fast, lightweight torrent client for Windows. Stream while you download, preview before you commit. Native, open source, zero bloat." />
+<meta name="description" content="TorrentFlow is a fast, lightweight torrent client for Windows. Stream while you download, preview before you commit. Native Rust, 5 MB installer, zero bloat." />
 <meta property="og:title" content="TorrentFlow" />
 <meta property="og:description" content="Fast, lightweight torrent client for Windows. Stream while downloading. Native. Open source." />
 <meta property="og:type" content="website" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%2322c55e'/><path d='M50 18 28 54h16l-4 28 30-40H52l6-24z' fill='%230b0e14'/></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
   :root {
-    --bg: #07090d;
-    --bg-2: #0b0f16;
-    --panel: rgba(255,255,255,0.03);
+    --bg: #05070b;
+    --bg-2: #090d14;
+    --panel: rgba(255,255,255,0.028);
     --panel-2: rgba(255,255,255,0.05);
-    --border: rgba(255,255,255,0.08);
-    --text: #e8edf4;
-    --muted: #94a0b4;
-    --dim: #5c6779;
+    --border: rgba(255,255,255,0.075);
+    --border-2: rgba(255,255,255,0.13);
+    --text: #eef2f8;
+    --muted: #98a4b8;
+    --dim: #5d6879;
     --green: #22c55e;
-    --green-soft: rgba(34,197,94,0.12);
-    --glow: rgba(34,197,94,0.25);
-    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --green-hi: #4ade80;
+    --green-soft: rgba(34,197,94,0.11);
+    --glow: rgba(34,197,94,0.28);
+    --sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+    --disp: "Space Grotesk", var(--sans);
+    --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    --r: 18px;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    line-height: 1.6;
-    overflow-x: hidden;
-    -webkit-font-smoothing: antialiased;
+    background: var(--bg); color: var(--text);
+    font-family: var(--sans); line-height: 1.65;
+    overflow-x: hidden; -webkit-font-smoothing: antialiased;
   }
-  ::selection { background: var(--green); color: #05080c; }
+  ::selection { background: var(--green); color: #04070b; }
+  .wrap { max-width: 1140px; margin: 0 auto; padding: 0 28px; }
 
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+  /* noise */
+  body::after {
+    content: ""; position: fixed; inset: 0; z-index: 999; pointer-events: none; opacity: 0.032;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
 
-  /* ---------- backdrop ---------- */
-  .backdrop { position: fixed; inset: 0; z-index: -2; overflow: hidden; }
-  .aurora {
-    position: absolute; border-radius: 50%; filter: blur(120px); opacity: 0.5;
-    animation: drift 26s ease-in-out infinite alternate;
-  }
-  .aurora.a1 { width: 720px; height: 720px; top: -280px; left: 8%; background: radial-gradient(circle, rgba(34,197,94,0.28), transparent 65%); }
-  .aurora.a2 { width: 640px; height: 640px; top: 10%; right: -180px; background: radial-gradient(circle, rgba(56,130,246,0.16), transparent 65%); animation-delay: -8s; animation-duration: 32s; }
-  .aurora.a3 { width: 560px; height: 560px; bottom: -220px; left: 30%; background: radial-gradient(circle, rgba(34,197,94,0.12), transparent 65%); animation-delay: -16s; animation-duration: 38s; }
-  @keyframes drift {
-    0% { transform: translate(0, 0) scale(1); }
-    50% { transform: translate(60px, -40px) scale(1.12); }
-    100% { transform: translate(-40px, 30px) scale(0.95); }
-  }
-  .grid-lines {
-    position: fixed; inset: 0; z-index: -1; pointer-events: none;
-    background-image:
-      linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px);
-    background-size: 56px 56px;
-    mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, black 30%, transparent 75%);
-  }
+  /* swarm canvas */
+  #swarm { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.75; }
+  .vignette { position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(ellipse 120% 90% at 50% 0%, transparent 40%, var(--bg) 100%); }
+
+  main, nav, footer { position: relative; z-index: 2; }
 
   /* ---------- nav ---------- */
-  nav {
-    position: sticky; top: 0; z-index: 100;
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    background: rgba(7,9,13,0.7); border-bottom: 1px solid var(--border);
-  }
-  .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
-  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16.5px; letter-spacing: -0.02em; text-decoration: none; color: var(--text); }
-  .logo-mark {
-    width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
-    background: linear-gradient(135deg, #34d977, #16a34a);
-    box-shadow: 0 0 18px var(--glow);
-  }
-  .logo-mark svg { width: 15px; height: 15px; fill: #05080c; }
-  .nav-links { display: flex; align-items: center; gap: 26px; }
-  .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; transition: color .15s; }
+  nav { position: sticky; top: 0; z-index: 100;
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    background: rgba(5,7,11,0.72); border-bottom: 1px solid var(--border); }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 66px; }
+  .logo { display: flex; align-items: center; gap: 11px; font-family: var(--disp); font-weight: 700; font-size: 17.5px; letter-spacing: -0.02em; text-decoration: none; color: var(--text); }
+  .logo-mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+    background: linear-gradient(135deg, #3ee084, #16a34a); box-shadow: 0 0 22px var(--glow); }
+  .logo-mark svg { width: 16px; height: 16px; fill: #04070b; }
+  .nav-links { display: flex; align-items: center; gap: 28px; }
+  .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500; transition: color .15s; }
   .nav-links a:hover { color: var(--text); }
-  .nav-cta {
-    padding: 8px 18px; border-radius: 8px; font-weight: 600; font-size: 13.5px;
-    background: var(--green); color: #05080c !important;
-    box-shadow: 0 0 0 0 var(--glow); transition: box-shadow .2s, transform .15s;
-  }
-  .nav-cta:hover { box-shadow: 0 0 24px var(--glow); transform: translateY(-1px); }
+  .nav-cta { padding: 9px 20px; border-radius: 9px; font-weight: 600; font-size: 13.5px;
+    background: var(--green); color: #04070b !important; transition: box-shadow .2s, transform .15s; }
+  .nav-cta:hover { box-shadow: 0 0 28px var(--glow); transform: translateY(-1px); }
   @media (max-width: 720px) { .nav-links a:not(.nav-cta) { display: none; } }
 
   /* ---------- hero ---------- */
-  header { padding: 110px 0 40px; text-align: center; position: relative; }
-  .pill {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 6px 14px; border-radius: 999px;
-    border: 1px solid var(--border); background: var(--panel);
-    color: var(--muted); font-size: 13px; margin-bottom: 30px;
-  }
-  .pill .ver { color: var(--green); font-family: var(--mono); font-weight: 600; }
-  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
-  h1 {
-    font-size: clamp(44px, 8vw, 84px);
-    line-height: 1.02; letter-spacing: -0.04em; font-weight: 800;
-    margin-bottom: 26px;
-  }
-  h1 .grad {
-    background: linear-gradient(100deg, #e8edf4 20%, #34d977 55%, #16a34a 80%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .sub { max-width: 620px; margin: 0 auto 40px; color: var(--muted); font-size: 18.5px; }
+  header { padding: 120px 0 30px; text-align: center; }
+  .pill { display: inline-flex; align-items: center; gap: 9px; padding: 7px 16px; border-radius: 999px;
+    border: 1px solid var(--border-2); background: var(--panel); color: var(--muted); font-size: 13px; margin-bottom: 34px;
+    backdrop-filter: blur(8px); }
+  .pill .ver { color: var(--green-hi); font-family: var(--mono); font-weight: 600; }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2.2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  h1 { font-family: var(--disp); font-size: clamp(46px, 8.4vw, 92px); line-height: 0.99;
+    letter-spacing: -0.045em; font-weight: 700; margin-bottom: 28px; }
+  h1 .grad { background: linear-gradient(100deg, #eef2f8 15%, #6ee79b 50%, #22c55e 85%);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { max-width: 640px; margin: 0 auto 42px; color: var(--muted); font-size: 18.5px; font-weight: 450; }
   .sub strong { color: var(--text); font-weight: 600; }
-  .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 22px; }
-  .btn {
-    display: inline-flex; align-items: center; gap: 9px;
-    padding: 15px 32px; border-radius: 12px; text-decoration: none;
-    font-weight: 650; font-size: 16px; transition: transform .15s, box-shadow .2s, background .15s;
-  }
+  .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 24px; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 16px 34px; border-radius: 13px;
+    text-decoration: none; font-weight: 600; font-size: 16px; transition: transform .15s, box-shadow .25s, background .15s; }
   .btn svg { width: 18px; height: 18px; fill: currentColor; }
-  .btn-primary { background: var(--green); color: #05080c; box-shadow: 0 8px 32px -6px var(--glow); }
-  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 44px -6px var(--glow); }
-  .btn-ghost { border: 1px solid var(--border); color: var(--text); background: var(--panel); }
+  .btn-primary { background: var(--green); color: #04070b; box-shadow: 0 10px 40px -8px var(--glow), inset 0 1px 0 rgba(255,255,255,0.25); }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 16px 52px -8px var(--glow), inset 0 1px 0 rgba(255,255,255,0.25); }
+  .btn-ghost { border: 1px solid var(--border-2); color: var(--text); background: var(--panel); backdrop-filter: blur(8px); }
   .btn-ghost:hover { background: var(--panel-2); transform: translateY(-2px); }
   .hero-note { color: var(--dim); font-size: 13px; font-family: var(--mono); }
 
-  /* ---------- screenshot ---------- */
-  .shot-zone { position: relative; padding: 64px 0 30px; }
-  .shot-frame {
-    position: relative; border-radius: 16px; overflow: hidden;
-    border: 1px solid rgba(255,255,255,0.12);
-    box-shadow:
-      0 0 0 1px rgba(0,0,0,0.6),
-      0 40px 100px -20px rgba(0,0,0,0.8),
-      0 0 90px -18px var(--glow);
+  /* ---------- shot ---------- */
+  .shot-zone { position: relative; padding: 70px 0 20px; perspective: 1600px; }
+  .shot-frame { position: relative; border-radius: 18px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.65), 0 60px 140px -30px rgba(0,0,0,0.9), 0 0 110px -20px var(--glow);
     background: var(--bg-2);
-    transform: perspective(1400px) rotateX(2.2deg);
-    transition: transform .5s ease;
-  }
-  .shot-zone:hover .shot-frame { transform: perspective(1400px) rotateX(0deg); }
+    transform: rotateX(3deg); transition: transform .5s cubic-bezier(.2,.7,.2,1); will-change: transform; }
   .shot-frame img { display: block; width: 100%; height: auto; }
-  .shot-bar {
-    display: flex; align-items: center; gap: 7px;
-    padding: 11px 14px; background: rgba(255,255,255,0.04); border-bottom: 1px solid var(--border);
-  }
+  .shot-bar { display: flex; align-items: center; gap: 7px; padding: 12px 15px;
+    background: rgba(255,255,255,0.045); border-bottom: 1px solid var(--border); }
   .shot-bar span { width: 11px; height: 11px; border-radius: 50%; }
   .shot-bar .r { background: #ff5f57; } .shot-bar .y { background: #febc2e; } .shot-bar .g { background: #28c840; }
-  .shot-bar .addr {
-    margin-left: 10px; padding: 2px 14px; border-radius: 6px;
-    background: rgba(0,0,0,0.35); color: var(--dim);
-    font-family: var(--mono); font-size: 11.5px;
-  }
-  .float-card {
-    position: absolute; z-index: 5;
-    background: rgba(13,17,24,0.92); backdrop-filter: blur(12px);
-    border: 1px solid var(--border); border-radius: 14px;
-    padding: 14px 18px; box-shadow: 0 20px 60px -12px rgba(0,0,0,0.7);
-    animation: floaty 7s ease-in-out infinite;
-  }
-  .float-card .big { font-size: 20px; font-weight: 750; letter-spacing: -0.02em; }
-  .float-card .small { font-size: 12px; color: var(--muted); }
-  .fc-1 { top: 90px; left: -14px; }
-  .fc-2 { bottom: 110px; right: -10px; animation-delay: -3.5s; }
-  .fc-2 .green { color: var(--green); }
-  @keyframes floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-  @media (max-width: 900px) { .float-card { display: none; } .shot-frame { transform: none; } }
+  .shot-bar .addr { margin-left: 10px; padding: 2px 14px; border-radius: 6px; background: rgba(0,0,0,0.4);
+    color: var(--dim); font-family: var(--mono); font-size: 11.5px; }
+  .float-card { position: absolute; z-index: 5; background: rgba(11,15,22,0.9); backdrop-filter: blur(14px);
+    border: 1px solid var(--border-2); border-radius: 15px; padding: 15px 20px;
+    box-shadow: 0 24px 70px -14px rgba(0,0,0,0.75); animation: floaty 7s ease-in-out infinite; }
+  .float-card .big { font-family: var(--disp); font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
+  .float-card .small { font-size: 12.5px; color: var(--muted); }
+  .fc-1 { top: 100px; left: -16px; }
+  .fc-2 { bottom: 120px; right: -12px; animation-delay: -3.5s; }
+  .fc-2 .green { color: var(--green-hi); }
+  @keyframes floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-13px); } }
+  @media (max-width: 900px) { .float-card { display: none; } .shot-frame { transform: none !important; } }
 
   /* ---------- stats ---------- */
-  .stats { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin: 40px 0 0; }
+  .stats { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-top: 50px;
+    background: linear-gradient(180deg, rgba(34,197,94,0.03), transparent); }
   .stats-inner { display: grid; grid-template-columns: repeat(4, 1fr); }
-  .stat { padding: 34px 20px; text-align: center; border-left: 1px solid var(--border); }
+  .stat { padding: 40px 20px; text-align: center; border-left: 1px solid var(--border); }
   .stat:first-child { border-left: none; }
-  .stat .n { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; }
-  .stat .n em { font-style: normal; color: var(--green); }
-  .stat .l { font-size: 12.5px; color: var(--dim); margin-top: 2px; }
-  @media (max-width: 720px) { .stats-inner { grid-template-columns: repeat(2, 1fr); } .stat:nth-child(3) { border-left: none; } }
+  .stat .n { font-family: var(--disp); font-size: 38px; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .stat .n em { font-style: normal; color: var(--green-hi); }
+  .stat .l { font-size: 12.5px; color: var(--dim); margin-top: 3px; letter-spacing: 0.04em; text-transform: uppercase; }
+  @media (max-width: 720px) { .stats-inner { grid-template-columns: repeat(2, 1fr); } .stat:nth-child(3) { border-left: none; } .stat { padding: 28px 16px; } }
 
   /* ---------- sections ---------- */
-  section { padding: 110px 0; }
-  .sec-tag {
-    display: inline-block; font-family: var(--mono); font-size: 12px;
-    color: var(--green); border: 1px solid rgba(34,197,94,0.3);
-    background: var(--green-soft); border-radius: 999px; padding: 4px 14px; margin-bottom: 18px;
-  }
-  h2 { font-size: clamp(30px, 4.6vw, 44px); letter-spacing: -0.03em; line-height: 1.12; font-weight: 750; margin-bottom: 16px; }
-  .sec-sub { color: var(--muted); font-size: 17px; max-width: 560px; }
+  section { padding: 120px 0; }
+  .sec-tag { display: inline-block; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.14em;
+    color: var(--green-hi); border: 1px solid rgba(34,197,94,0.32); background: var(--green-soft);
+    border-radius: 999px; padding: 5px 15px; margin-bottom: 20px; }
+  h2 { font-family: var(--disp); font-size: clamp(32px, 4.8vw, 50px); letter-spacing: -0.035em; line-height: 1.08; font-weight: 700; margin-bottom: 18px; }
+  .sec-sub { color: var(--muted); font-size: 17.5px; max-width: 580px; }
+  .sec-head { margin-bottom: 60px; }
 
   /* ---------- bento ---------- */
-  .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 56px; }
-  .cell {
-    grid-column: span 2;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 18px;
-    padding: 30px 26px; position: relative; overflow: hidden;
-    transition: border-color .2s, transform .2s, background .2s;
-  }
-  .cell:hover { border-color: rgba(34,197,94,0.35); transform: translateY(-3px); background: var(--panel-2); }
-  .cell::before {
-    content: ""; position: absolute; inset: 0;
-    background: radial-gradient(420px 200px at var(--mx,50%) -20%, rgba(34,197,94,0.09), transparent 60%);
-    opacity: 0; transition: opacity .25s; pointer-events: none;
-  }
-  .cell:hover::before { opacity: 1; }
+  .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+  .cell { grid-column: span 2; position: relative; overflow: hidden;
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--r); padding: 32px 28px;
+    transition: transform .25s, border-color .25s, background .25s; }
+  .cell:hover { transform: translateY(-4px); border-color: rgba(34,197,94,0.4); }
   .cell.wide { grid-column: span 3; }
-  .cell .ico {
-    width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center;
-    background: var(--green-soft); border: 1px solid rgba(34,197,94,0.25);
-    font-size: 20px; margin-bottom: 18px;
-  }
-  .cell h3 { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; margin-bottom: 8px; }
+  .cell::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s;
+    background: radial-gradient(480px 240px at var(--mx,50%) -10%, rgba(34,197,94,0.1), transparent 62%); }
+  .cell:hover::before { opacity: 1; }
+  .cell .ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+    background: var(--green-soft); border: 1px solid rgba(34,197,94,0.28); font-size: 20px; margin-bottom: 20px; }
+  .cell h3 { font-family: var(--disp); font-size: 17.5px; font-weight: 600; letter-spacing: -0.015em; margin-bottom: 9px; }
   .cell p { color: var(--muted); font-size: 14.5px; }
-  .cell .kpi { font-family: var(--mono); font-size: 12px; color: var(--green); margin-top: 14px; display: block; }
-  @media (max-width: 860px) { .bento { grid-template-columns: repeat(2, 1fr); } .cell, .cell.wide { grid-column: span 1; } }
+  .cell .kpi { font-family: var(--mono); font-size: 12px; color: var(--green-hi); margin-top: 16px; display: block; }
+  @media (max-width: 860px) { .bento { grid-template-columns: 1fr 1fr; } .cell, .cell.wide { grid-column: span 1; } }
   @media (max-width: 560px) { .bento { grid-template-columns: 1fr; } .cell, .cell.wide { grid-column: span 1; } }
 
+  /* ---------- compare ---------- */
+  .cmp-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r); background: var(--panel); }
+  table.cmp { width: 100%; border-collapse: collapse; min-width: 640px; }
+  .cmp th, .cmp td { padding: 16px 22px; text-align: left; border-bottom: 1px solid var(--border); font-size: 14.5px; }
+  .cmp tr:last-child td { border-bottom: none; }
+  .cmp thead th { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--dim); background: rgba(255,255,255,0.02); }
+  .cmp td:first-child { color: var(--muted); font-weight: 500; }
+  .cmp .us { background: var(--green-soft); }
+  .cmp thead .us { color: var(--green-hi); font-family: var(--disp); font-size: 15px; letter-spacing: -0.01em; text-transform: none; font-weight: 700; }
+  .cmp td.us { color: var(--text); font-weight: 600; }
+  .yes { color: var(--green-hi); font-weight: 700; }
+  .no { color: var(--dim); }
+
   /* ---------- terminal ---------- */
-  .term-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; }
-  @media (max-width: 900px) { .term-wrap { grid-template-columns: 1fr; } }
-  .term {
-    background: #0a0d12; border: 1px solid var(--border); border-radius: 14px;
-    box-shadow: 0 30px 80px -20px rgba(0,0,0,0.8); overflow: hidden;
-  }
-  .term-bar { display: flex; gap: 7px; padding: 12px 14px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.03); }
+  .term-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+  @media (max-width: 900px) { .term-wrap { grid-template-columns: 1fr; gap: 40px; } }
+  .term { background: #070a0f; border: 1px solid var(--border-2); border-radius: 16px;
+    box-shadow: 0 40px 100px -24px rgba(0,0,0,0.85); overflow: hidden; }
+  .term-bar { display: flex; gap: 7px; padding: 13px 15px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.03); }
   .term-bar span { width: 11px; height: 11px; border-radius: 50%; }
-  .term-body {
-    padding: 22px 24px; font-family: var(--mono); font-size: 13px; line-height: 1.9;
-    min-height: 300px; color: var(--muted);
-  }
-  .term-body .ln { white-space: pre-wrap; }
-  .term-body .p { color: var(--green); }
-  .term-body .ok { color: #34d977; }
+  .term-body { padding: 24px 26px; font-family: var(--mono); font-size: 13px; line-height: 2; min-height: 310px; color: var(--muted); }
+  .term-body .p { color: var(--green-hi); }
+  .term-body .ok { color: #3ee084; }
   .term-body .dim { color: var(--dim); }
-  .term-body .w { color: #e8edf4; }
+  .term-body .w { color: var(--text); }
   .caret { display: inline-block; width: 8px; height: 15px; background: var(--green); vertical-align: -2px; animation: pulse 1s infinite; }
 
   /* ---------- steps ---------- */
-  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 56px; counter-reset: step; }
-  .step {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 30px 26px;
-    position: relative; transition: border-color .2s, transform .2s;
-  }
-  .step:hover { border-color: rgba(34,197,94,0.35); transform: translateY(-3px); }
-  .step .num {
-    font-family: var(--mono); font-size: 13px; color: var(--green);
-    width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
-    background: var(--green-soft); border: 1px solid rgba(34,197,94,0.25); margin-bottom: 20px;
-  }
-  .step h3 { font-size: 17px; font-weight: 650; margin-bottom: 8px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .step { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r); padding: 32px 28px;
+    position: relative; transition: border-color .2s, transform .2s; }
+  .step:hover { border-color: rgba(34,197,94,0.4); transform: translateY(-4px); }
+  .step .num { font-family: var(--mono); font-size: 13px; color: var(--green-hi); width: 36px; height: 36px;
+    border-radius: 11px; display: grid; place-items: center; background: var(--green-soft);
+    border: 1px solid rgba(34,197,94,0.28); margin-bottom: 22px; }
+  .step h3 { font-family: var(--disp); font-size: 17.5px; font-weight: 600; margin-bottom: 9px; }
   .step p { color: var(--muted); font-size: 14.5px; }
   @media (max-width: 860px) { .steps { grid-template-columns: 1fr; } }
 
-  /* ---------- cta ---------- */
-  .cta-final {
-    text-align: center; border: 1px solid var(--border); border-radius: 24px;
-    padding: 90px 30px; position: relative; overflow: hidden;
-    background:
-      radial-gradient(600px 300px at 50% 0%, rgba(34,197,94,0.13), transparent 70%),
-      var(--bg-2);
-  }
-  .cta-final h2 { margin-bottom: 14px; }
-  .cta-final .sec-sub { margin: 0 auto 36px; }
+  /* ---------- faq ---------- */
+  .faq { max-width: 760px; margin: 0 auto; }
+  .qa { border: 1px solid var(--border); border-radius: 14px; background: var(--panel); margin-bottom: 12px; overflow: hidden; transition: border-color .2s; }
+  .qa[open] { border-color: rgba(34,197,94,0.35); }
+  .qa summary { cursor: pointer; list-style: none; padding: 20px 24px; font-weight: 600; font-size: 15.5px;
+    display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .qa summary::-webkit-details-marker { display: none; }
+  .qa summary .chev { color: var(--dim); transition: transform .25s; flex-shrink: 0; }
+  .qa[open] summary .chev { transform: rotate(45deg); color: var(--green-hi); }
+  .qa .a { padding: 0 24px 22px; color: var(--muted); font-size: 14.5px; }
 
-  footer { border-top: 1px solid var(--border); padding: 44px 0 60px; }
+  /* ---------- cta ---------- */
+  .cta-final { text-align: center; border: 1px solid var(--border); border-radius: 26px; padding: 100px 30px;
+    position: relative; overflow: hidden; background:
+      radial-gradient(700px 340px at 50% 0%, rgba(34,197,94,0.14), transparent 72%), var(--bg-2); }
+  .cta-final h2 { margin-bottom: 16px; }
+  .cta-final .sec-sub { margin: 0 auto 40px; }
+  .cta-final .hero-note { margin-top: 22px; }
+
+  footer { border-top: 1px solid var(--border); padding: 48px 0 64px; }
   .foot-inner { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; color: var(--dim); font-size: 13.5px; }
-  .foot-inner a { color: var(--muted); text-decoration: none; }
+  .foot-inner a { color: var(--muted); text-decoration: none; transition: color .15s; }
   .foot-inner a:hover { color: var(--text); }
 
   /* ---------- reveal ---------- */
-  .rv { opacity: 0; transform: translateY(26px); transition: opacity .7s ease, transform .7s ease; }
+  .rv { opacity: 0; transform: translateY(28px); transition: opacity .75s ease, transform .75s ease; }
   .rv.in { opacity: 1; transform: none; }
   .rv.d1 { transition-delay: .08s; } .rv.d2 { transition-delay: .16s; } .rv.d3 { transition-delay: .24s; }
 </style>
 </head>
 <body>
-  <div class="backdrop"><div class="aurora a1"></div><div class="aurora a2"></div><div class="aurora a3"></div></div>
-  <div class="grid-lines"></div>
+  <canvas id="swarm"></canvas>
+  <div class="vignette"></div>
 
   <nav>
     <div class="wrap nav-inner">
@@ -279,21 +241,22 @@
       </a>
       <div class="nav-links">
         <a href="#features">Features</a>
-        <a href="#streaming">Streaming</a>
-        <a href="#download">Download</a>
+        <a href="#compare">Compare</a>
+        <a href="#faq">FAQ</a>
         <a href="https://gitlab.com/senkec21/TorrentFlow" target="_blank" rel="noopener">Source</a>
         <a class="nav-cta" href="https://gitlab.com/senkec21/TorrentFlow/-/releases/permalink/latest" target="_blank" rel="noopener">Download</a>
       </div>
     </div>
   </nav>
 
+  <main>
   <header class="wrap">
-    <div class="pill rv in"><span class="dot"></span>Version <span class="ver" id="ver">v0.1.0</span> — out now for Windows</div>
+    <div class="pill rv in"><span class="dot"></span>Version <span class="ver" id="ver">v0.1.1</span> — out now for Windows</div>
     <h1 class="rv in">Torrents, at<br /><span class="grad">full speed.</span></h1>
     <p class="sub rv in d1">
       A native Windows torrent client that <strong>streams while it downloads</strong>,
-      shows you every file before it lands, and stays out of your way.
-      <strong>19 MB.</strong> No Electron. No ads. No telemetry.
+      shows every file before it lands, and stays out of your way.
+      <strong>5&nbsp;MB installer.</strong> No Electron. No ads. No telemetry.
     </p>
     <div class="cta-row rv in d2">
       <a class="btn btn-primary" href="https://gitlab.com/senkec21/TorrentFlow/-/releases/permalink/latest" target="_blank" rel="noopener">
@@ -309,15 +272,15 @@
 
     <div class="shot-zone rv in d3">
       <div class="float-card fc-1">
-        <div class="big">19 MB</div>
-        <div class="small">installer, start in under a second</div>
+        <div class="big">5 MB</div>
+        <div class="small">installer, starts in under a second</div>
       </div>
-      <div class="shot-frame">
+      <div class="shot-frame" id="shot">
         <div class="shot-bar"><span class="r"></span><span class="y"></span><span class="g"></span><span class="addr">torrentflow — native window</span></div>
         <img src="assets/app.png" alt="TorrentFlow application window showing active torrents with live progress" />
       </div>
       <div class="float-card fc-2">
-        <div class="big"><span class="green">●</span> Streaming ready</div>
+        <div class="big"><span class="green">●</span> Ready to stream</div>
         <div class="small">watch in VLC while pieces arrive</div>
       </div>
     </div>
@@ -325,17 +288,19 @@
 
   <div class="stats rv">
     <div class="wrap stats-inner">
-      <div class="stat"><div class="n">19<em>MB</em></div><div class="l">installer size</div></div>
-      <div class="stat"><div class="n">&lt;1<em>s</em></div><div class="l">cold start</div></div>
-      <div class="stat"><div class="n">0</div><div class="l">telemetry, ever</div></div>
+      <div class="stat"><div class="n" data-count="5" data-suffix=" MB">0 MB</div><div class="l">installer size</div></div>
+      <div class="stat"><div class="n" data-count="1" data-prefix="<" data-suffix="s">0s</div><div class="l">cold start</div></div>
+      <div class="stat"><div class="n" data-count="0">0</div><div class="l">telemetry, ever</div></div>
       <div class="stat"><div class="n">MIT</div><div class="l">open source license</div></div>
     </div>
   </div>
 
   <section id="features" class="wrap">
-    <span class="sec-tag rv">FEATURES</span>
-    <h2 class="rv">Everything a modern<br />client should do.</h2>
-    <p class="sec-sub rv d1">Built on Rust and librqbit with a React interface. No browser engine inside, no memory hog, no upsells.</p>
+    <div class="sec-head">
+      <span class="sec-tag rv">FEATURES</span>
+      <h2 class="rv">Everything a modern<br />client should do.</h2>
+      <p class="sec-sub rv d1">Built on Rust and librqbit with a React interface. No browser engine inside, no memory hog, no upsells.</p>
+    </div>
 
     <div class="bento">
       <div class="cell wide rv">
@@ -363,7 +328,7 @@
       <div class="cell rv d2">
         <div class="ico">⚡</div>
         <h3>DHT native</h3>
-        <p>Trackerless downloads work out of the box. Hundreds of DHT nodes connected in seconds.</p>
+        <p>Trackerless downloads work out of the box. Hundreds of DHT nodes connected within seconds of launch.</p>
       </div>
       <div class="cell rv">
         <div class="ico">📂</div>
@@ -373,12 +338,36 @@
       <div class="cell rv d1">
         <div class="ico">🌙</div>
         <h3>Designed dark</h3>
-        <p>A custom title bar, crisp typography and a UI that respects your eyes at 2 AM.</p>
+        <p>A custom title bar, crisp typography and an interface that respects your eyes at 2 AM.</p>
       </div>
     </div>
   </section>
 
-  <section id="streaming" class="wrap">
+  <section id="compare" class="wrap">
+    <div class="sec-head">
+      <span class="sec-tag rv">COMPARISON</span>
+      <h2 class="rv">Why switch?</h2>
+      <p class="sec-sub rv d1">The honest table. Other clients are fine tools — TorrentFlow is just built for how people download in 2026.</p>
+    </div>
+    <div class="cmp-wrap rv">
+      <table class="cmp">
+        <thead>
+          <tr><th></th><th class="us">TorrentFlow</th><th>uTorrent</th><th>qBittorrent</th><th>Web clients</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Installer size</td><td class="us">5 MB</td><td>~3 MB + ads</td><td>~30 MB</td><td>browser tab</td></tr>
+          <tr><td>Ads &amp; bundled offers</td><td class="us"><span class="yes">Never</span></td><td><span class="no">Yes</span></td><td><span class="yes">None</span></td><td><span class="no">Sometimes</span></td></tr>
+          <tr><td>Stream while downloading</td><td class="us"><span class="yes">Built-in</span></td><td><span class="no">No</span></td><td><span class="no">No</span></td><td><span class="yes">Yes</span></td></tr>
+          <tr><td>Preview before download</td><td class="us"><span class="yes">Full file list</span></td><td><span class="yes">Yes</span></td><td><span class="yes">Yes</span></td><td><span class="no">Partial</span></td></tr>
+          <tr><td>Telemetry</td><td class="us"><span class="yes">Zero</span></td><td><span class="no">Yes</span></td><td><span class="yes">None</span></td><td><span class="no">Yes</span></td></tr>
+          <tr><td>Modern dark UI</td><td class="us"><span class="yes">Native</span></td><td><span class="no">Dated</span></td><td><span class="no">Dated</span></td><td><span class="yes">Yes</span></td></tr>
+          <tr><td>Open source</td><td class="us"><span class="yes">MIT</span></td><td><span class="no">Closed</span></td><td><span class="yes">GPL</span></td><td><span class="no">Mixed</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="wrap">
     <div class="term-wrap">
       <div class="rv">
         <span class="sec-tag">HOW IT FEELS</span>
@@ -393,8 +382,10 @@
   </section>
 
   <section class="wrap">
-    <span class="sec-tag rv">WORKFLOW</span>
-    <h2 class="rv">Three steps. That's the whole app.</h2>
+    <div class="sec-head">
+      <span class="sec-tag rv">WORKFLOW</span>
+      <h2 class="rv">Three steps. That's the whole app.</h2>
+    </div>
     <div class="steps">
       <div class="step rv">
         <div class="num">01</div>
@@ -414,21 +405,51 @@
     </div>
   </section>
 
+  <section id="faq" class="wrap">
+    <div class="sec-head" style="text-align:center">
+      <span class="sec-tag rv">FAQ</span>
+      <h2 class="rv">Questions, answered.</h2>
+    </div>
+    <div class="faq">
+      <details class="qa rv">
+        <summary>Is torrenting legal? <span class="chev">+</span></summary>
+        <p class="a">The BitTorrent protocol is legal and used for Linux distributions, game patches, scientific datasets and more. Downloading copyrighted content without permission is not legal in most countries. TorrentFlow is a tool — use it responsibly and respect copyright.</p>
+      </details>
+      <details class="qa rv d1">
+        <summary>Does it really have no ads or telemetry? <span class="chev">+</span></summary>
+        <p class="a">Correct. No ads, no bundled offers, no analytics, no network calls except torrent traffic. The source is MIT licensed, so you can verify every line.</p>
+      </details>
+      <details class="qa rv d2">
+        <summary>How does streaming work? <span class="chev">+</span></summary>
+        <p class="a">TorrentFlow fetches pieces in sequential order, prioritizes subtitle and header files, and serves the partial file locally. VLC plays it as soon as the buffer is deep enough. You watch while the rest downloads.</p>
+      </details>
+      <details class="qa rv">
+        <summary>Will it use all my bandwidth? <span class="chev">+</span></summary>
+        <p class="a">It behaves like any well-mannered client: DHT discovery is lightweight, and you stay in control. Speed limits and scheduling are on the roadmap.</p>
+      </details>
+      <details class="qa rv d1">
+        <summary>macOS or Linux? <span class="chev">+</span></summary>
+        <p class="a">Windows first — it is where the pain was worst. The codebase is portable (Tauri 2 + Rust), so other platforms are realistic once the Windows experience is perfect.</p>
+      </details>
+    </div>
+  </section>
+
   <section id="download" class="wrap">
     <div class="cta-final rv">
       <span class="sec-tag">DOWNLOAD</span>
       <h2>Ready in 30 seconds.</h2>
-      <p class="sec-sub">Grab <span id="ver2" style="font-family:var(--mono);color:var(--green)">v0.1.0</span>, run the installer, paste a magnet. That's it.</p>
+      <p class="sec-sub">Grab <span id="ver2" style="font-family:var(--mono);color:var(--green-hi)">v0.1.1</span>, run the installer, paste a magnet. That's it.</p>
       <div class="cta-row">
         <a class="btn btn-primary" href="https://gitlab.com/senkec21/TorrentFlow/-/releases/permalink/latest" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24"><path d="M12 3v10.6l3.3-3.3 1.4 1.4L12 16.4l-4.7-4.7 1.4-1.4L12 13.6V3zM5 19h14v2H5z"/></svg>
           TorrentFlow for Windows
         </a>
-        <a class="btn btn-ghost" href="https://gitlab.com/senkec21/TorrentFlow/releases" target="_blank" rel="noopener">All releases</a>
+        <a class="btn btn-ghost" href="https://gitlab.com/senkec21/TorrentFlow/-/releases" target="_blank" rel="noopener">All releases</a>
       </div>
-      <p class="hero-note" style="margin-top:20px">windows 10/11 · x64 · ~19 MB</p>
+      <p class="hero-note">windows 10/11 · x64 · 5 MB installer</p>
     </div>
   </section>
+  </main>
 
   <footer>
     <div class="wrap foot-inner">
@@ -438,12 +459,46 @@
   </footer>
 
 <script>
+  /* ---------- swarm canvas ---------- */
+  const cv = document.getElementById("swarm"), cx = cv.getContext("2d");
+  let W, H, pts;
+  function resize() {
+    W = cv.width = innerWidth; H = cv.height = innerHeight;
+    const n = Math.min(70, Math.floor(W * H / 26000));
+    pts = Array.from({length: n}, () => ({
+      x: Math.random() * W, y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.35, vy: (Math.random() - 0.5) * 0.35,
+      r: Math.random() * 1.6 + 0.6,
+    }));
+  }
+  resize(); addEventListener("resize", resize);
+  (function tick() {
+    cx.clearRect(0, 0, W, H);
+    for (const p of pts) {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0 || p.x > W) p.vx *= -1;
+      if (p.y < 0 || p.y > H) p.vy *= -1;
+    }
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+      const a = pts[i], b = pts[j], dx = a.x - b.x, dy = a.y - b.y, d2 = dx*dx + dy*dy;
+      if (d2 < 150*150) {
+        cx.strokeStyle = `rgba(34,197,94,${(1 - Math.sqrt(d2)/150) * 0.13})`;
+        cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke();
+      }
+    }
+    cx.fillStyle = "rgba(74,222,128,0.5)";
+    for (const p of pts) { cx.beginPath(); cx.arc(p.x, p.y, p.r, 0, 7); cx.fill(); }
+    requestAnimationFrame(tick);
+  })();
+
+  /* ---------- reveals ---------- */
   const io = new IntersectionObserver(
     (es) => es.forEach((e) => e.isIntersecting && e.target.classList.add("in")),
     { threshold: 0.12 },
   );
   document.querySelectorAll(".rv").forEach((el) => io.observe(el));
 
+  /* ---------- bento spotlight ---------- */
   document.querySelectorAll(".cell").forEach((c) =>
     c.addEventListener("mousemove", (e) => {
       const r = c.getBoundingClientRect();
@@ -451,16 +506,44 @@
     }),
   );
 
+  /* ---------- screenshot tilt ---------- */
+  const shot = document.getElementById("shot");
+  if (matchMedia("(pointer:fine)").matches && shot) {
+    shot.addEventListener("mousemove", (e) => {
+      const r = shot.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5;
+      const y = (e.clientY - r.top) / r.height - 0.5;
+      shot.style.transform = `rotateX(${3 - y * 7}deg) rotateY(${x * 8}deg)`;
+    });
+    shot.addEventListener("mouseleave", () => shot.style.transform = "rotateX(3deg)");
+  }
+
+  /* ---------- count up ---------- */
+  const cio = new IntersectionObserver((es) => es.forEach((e) => {
+    if (!e.isIntersecting) return;
+    cio.unobserve(e.target);
+    const el = e.target, target = +el.dataset.count;
+    const pre = el.dataset.prefix ?? "", suf = el.dataset.suffix ?? "";
+    const t0 = performance.now();
+    (function step(t) {
+      const k = Math.min(1, (t - t0) / 900), v = Math.round(target * (1 - Math.pow(1 - k, 3)));
+      el.textContent = pre + v + suf;
+      if (k < 1) requestAnimationFrame(step);
+    })(t0);
+  }), { threshold: 0.5 });
+  document.querySelectorAll("[data-count]").forEach((el) => cio.observe(el));
+
+  /* ---------- version from GitLab ---------- */
   fetch("https://gitlab.com/api/v4/projects/senkec21%2FTorrentFlow/releases")
     .then((r) => r.ok ? r.json() : null)
     .then((d) => {
       if (!d || !d[0] || !d[0].tag_name) return;
-      const tag = d[0].tag_name;
-      document.getElementById("ver").textContent = tag;
-      document.getElementById("ver2").textContent = tag;
+      ver.textContent = d[0].tag_name;
+      ver2.textContent = d[0].tag_name;
     })
     .catch(() => {});
 
+  /* ---------- terminal ---------- */
   const LINES = [
     ["p", "$ torrentflow add magnet:?xt=urn:btih:08ada5a7…"],
     ["dim", "resolving metadata via DHT … 267 nodes"],
@@ -468,15 +551,15 @@
     ["dim", "added — sequential mode, subtitles first"],
     ["",   ""],
     ["p", "$ torrentflow status"],
-    ["ok", "  Sintel        seeding   100%   ▲ 1.2 MB/s"],
-    ["ok", "  Big Buck Bunny  87%    4.8 MB/s   ETA 00:41"],
+    ["ok", "  Sintel          seeding  100%   ▲ 1.2 MB/s"],
+    ["ok", "  Big Buck Bunny  seeding  100%   ▲ 890 KB/s"],
     ["dim", "stream ready → opening VLC …"],
   ];
   const term = document.getElementById("term");
   let li = 0, ci = 0, started = false;
-  function tick() {
+  function typeTick() {
     if (li >= LINES.length) {
-      setTimeout(() => { term.innerHTML = ""; li = 0; ci = 0; tick(); }, 6000);
+      setTimeout(() => { term.innerHTML = ""; li = 0; ci = 0; typeTick(); }, 6500);
       return;
     }
     const [cls, text] = LINES[li];
@@ -491,14 +574,14 @@
     if (ci >= text.length) {
       line.textContent = text;
       li++; ci = 0;
-      setTimeout(tick, text === "" ? 120 : 340);
+      setTimeout(typeTick, text === "" ? 120 : 340);
     } else {
       line.innerHTML = text.slice(0, ci) + (li === LINES.length - 1 ? '<span class="caret"></span>' : "");
-      setTimeout(tick, 24);
+      setTimeout(typeTick, 24);
     }
   }
   new IntersectionObserver((es, o) => {
-    if (es[0].isIntersecting && !started) { started = true; tick(); o.disconnect(); }
+    if (es[0].isIntersecting && !started) { started = true; typeTick(); o.disconnect(); }
   }, { threshold: 0.3 }).observe(term);
 </script>
 </body>
