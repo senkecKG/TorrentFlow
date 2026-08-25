@@ -38,4 +38,9 @@ export const bufferStatus = (torrentId: number, fileId: number, position: number
 export const suggestVideoFile = (torrentId: number) =>
   invoke<number | null>("suggest_video_file", { torrentId });
 
-export const takePendingSource = () => invoke<Source | null>("take_pending_source");
+export type SourceDelivery = { deliveryId: number; source: Source };
+
+export const takePendingSource = () => invoke<SourceDelivery | null>("take_pending_source");
+export const acknowledgePendingSource = (deliveryId: number) =>
+  invoke<boolean>("acknowledge_pending_source", { deliveryId });
+export const takeStartupError = () => invoke<string | null>("take_startup_error");

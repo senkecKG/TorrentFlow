@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { Source, TorrentDto } from "./lib/types";
 import {
+  acknowledgePendingSource,
   launchVlc,
   moveTorrentOrder,
   pauseTorrent,
@@ -14,6 +15,8 @@ import {
   resumeTorrent,
   suggestVideoFile,
   takePendingSource,
+  takeStartupError,
+  type SourceDelivery,
 } from "./lib/api";
 import { errMsg } from "./lib/format";
 import { useSnapshot } from "./hooks/useSnapshot";
@@ -48,10 +51,18 @@ function Shell() {
   const [view, setView] = useState<View>("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [drawerId, setDrawerId] = useState<number | null>(null);
-  const [addModal, setAddModal] = useState<{ source: Source | null } | null>(null);
+  const [addModal, setAddModal] = useState<{
+    requestId: number;
+    source: Source | null;
+  } | null>(null);
+  const nextAddRequestId = useRef(0);
   const [removeTarget, setRemoveTarget] = useState<TorrentDto | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [winWidth, setWinWidth] = useState(window.innerWidth);
+
+  const openAddModal = useCallback((source: Source | null) => {
+    setAddModal({ requestId: ++nextAddRequestId.current, source });
+  }, []);
 
   useEffect(() => {
     const onResize = () => setWinWidth(window.innerWidth);
@@ -70,16 +81,49 @@ function Shell() {
   }, [toast]);
 
   useEffect(() => {
-    takePendingSource().then((s) => {
-      if (s) setAddModal({ source: s });
-    });
-    const unP = listen<Source>("app://source", (e) => {
-      setAddModal({ source: e.payload });
-    });
-    return () => {
-      unP.then((u) => u());
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    const handled = new Set<number>();
+    const handleSource = (delivery: SourceDelivery) => {
+      if (disposed) return;
+      if (handled.has(delivery.deliveryId)) return;
+      handled.add(delivery.deliveryId);
+      openAddModal(delivery.source);
+      acknowledgePendingSource(delivery.deliveryId).catch((error) => {
+        if (!disposed) toast("error", "Could not acknowledge external torrent", errMsg(error));
+      });
     };
-  }, []);
+    listen<SourceDelivery>("app://source", (e) => handleSource(e.payload))
+      .then((u) => {
+        if (disposed) {
+          u();
+          return;
+        }
+        unlisten = u;
+        takePendingSource()
+          .then((s) => {
+            if (s) handleSource(s);
+          })
+          .catch((e) => {
+            if (!disposed) toast("error", "Could not open external torrent", errMsg(e));
+          });
+      })
+      .catch((e) => {
+        if (!disposed) toast("error", "Could not listen for external torrents", errMsg(e));
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [openAddModal, toast]);
+
+  useEffect(() => {
+    takeStartupError()
+      .then((error) => {
+        if (error) toast("error", "Could not repair Windows link handling", error);
+      })
+      .catch((error) => toast("error", "Could not read startup status", errMsg(error)));
+  }, [toast]);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -95,7 +139,7 @@ function Shell() {
         const torrentPath = p.paths.find((x) => x.toLowerCase().endsWith(".torrent"));
         if (p.type === "drop") {
           setDragOver(false);
-          if (torrentPath) setAddModal({ source: { kind: "torrentPath", path: torrentPath } });
+          if (torrentPath) openAddModal({ kind: "torrentPath", path: torrentPath });
           return;
         }
         setDragOver(torrentPath != null);
@@ -108,7 +152,7 @@ function Shell() {
       disposed = true;
       unlisten?.();
     };
-  }, []);
+  }, [openAddModal]);
 
   const run = useCallback(
     (p: Promise<unknown>, what: string) =>
@@ -144,7 +188,7 @@ function Shell() {
           toast("error", "Could not start VLC", errMsg(e));
         }
       },
-      onOpenFolder: (t: TorrentDto) => run(openPath(t.savePath), "open folder"),
+      onOpenFolder: (t: TorrentDto) => run(revealItemInDir(t.savePath), "open folder"),
       onRemove: (t: TorrentDto) => setRemoveTarget(t),
     }),
     [run, refresh],
@@ -154,12 +198,12 @@ function Shell() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        setAddModal({ source: null });
+        openAddModal(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [openAddModal]);
 
   const torrents = snapshot?.torrents ?? [];
   const filtered = useMemo(
@@ -189,7 +233,7 @@ function Shell() {
         <main className="flex min-w-0 flex-1 flex-col">
           <Header
             view={view}
-            onAdd={() => setAddModal({ source: null })}
+            onAdd={() => openAddModal(null)}
           />
           {view === "settings" ? (
             <SettingsPage toast={toast} />
@@ -199,7 +243,7 @@ function Shell() {
               selectedId={selectedId}
               view={view}
               actions={actions}
-              onAdd={() => setAddModal({ source: null })}
+              onAdd={() => openAddModal(null)}
             />
           )}
         </main>
@@ -211,6 +255,7 @@ function Shell() {
       )}
       {addModal && (
         <AddTorrentModal
+          key={addModal.requestId}
           initialSource={addModal.source}
           onClose={() => setAddModal(null)}
           onAdded={(id) => {

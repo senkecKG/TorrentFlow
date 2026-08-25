@@ -26,12 +26,12 @@ fn settings_snapshot(state: &AppState) -> Settings {
     state.settings.lock().unwrap().clone()
 }
 
-fn save_settings(state: &AppState, s: &Settings) {
+fn save_settings(state: &AppState, s: &Settings) -> Result<(), String> {
     let dir = crate::settings::config_dir(&state.app);
-    if let Err(e) = s.save(&dir) {
-        eprintln!("failed to save settings: {e}");
-    }
+    s.save(&dir)
+        .map_err(|e| format!("failed to save settings: {e:#}"))?;
     *state.settings.lock().unwrap() = s.clone();
+    Ok(())
 }
 
 #[tauri::command]
@@ -40,7 +40,10 @@ pub fn get_snapshot(state: State<AppState>) -> SnapshotDto {
 }
 
 #[tauri::command]
-pub async fn preview_source(state: State<'_, AppState>, source: SourceKind) -> Result<PreviewSourceDto, String> {
+pub async fn preview_source(
+    state: State<'_, AppState>,
+    source: SourceKind,
+) -> Result<PreviewSourceDto, String> {
     state
         .engine
         .preview_source(source)
@@ -120,7 +123,16 @@ pub fn get_settings(state: State<AppState>) -> Settings {
 
 #[tauri::command]
 pub fn save_settings_cmd(state: State<AppState>, settings: Settings) -> Result<(), String> {
-    save_settings(&state, &settings);
+    let previous = settings_snapshot(&state);
+    let association_backups = update_file_associations(&previous, &settings)?;
+    if let Err(save_error) = save_settings(&state, &settings) {
+        return match restore_file_associations(&association_backups) {
+            Ok(()) => Err(save_error),
+            Err(rollback_error) => Err(format!(
+                "{save_error}; failed to restore file associations: {rollback_error}"
+            )),
+        };
+    }
     state.engine.apply_limits();
     apply_side_effects(&state, &settings);
     Ok(())
@@ -135,17 +147,92 @@ fn apply_side_effects(state: &AppState, s: &Settings) {
     } else {
         autostart.disable()
     };
+}
 
-    // file / protocol associations use our own exe path
-    if let Ok(exe) = std::env::current_exe() {
-        let exe = exe.to_string_lossy().into_owned();
-        if s.assoc_torrent {
-            let _ = winint::set_file_association("torrent", true, &exe);
+fn release_exe() -> Result<Option<String>, String> {
+    if cfg!(debug_assertions) {
+        return Ok(None);
+    }
+    std::env::current_exe()
+        .map(|p| Some(p.to_string_lossy().into_owned()))
+        .map_err(|e| format!("failed to locate TorrentFlow executable: {e}"))
+}
+
+fn restore_file_associations(backups: &[winint::FileAssociationBackup]) -> Result<(), String> {
+    let errors = backups
+        .iter()
+        .rev()
+        .filter_map(|backup| {
+            winint::restore_file_association(backup)
+                .err()
+                .map(|error| format!("{error:#}"))
+        })
+        .collect::<Vec<_>>();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join(", "))
+    }
+}
+
+fn update_file_associations(
+    previous: &Settings,
+    next: &Settings,
+) -> Result<Vec<winint::FileAssociationBackup>, String> {
+    let Some(exe) = release_exe()? else {
+        return Ok(Vec::new());
+    };
+    let mut backups = Vec::new();
+    for (kind, was_enabled, enabled) in [
+        ("torrent", previous.assoc_torrent, next.assoc_torrent),
+        ("magnet", previous.assoc_magnet, next.assoc_magnet),
+    ] {
+        if was_enabled == enabled {
+            continue;
         }
-        if s.assoc_magnet {
-            let _ = winint::set_file_association("magnet", true, &exe);
+        let backup = match winint::snapshot_file_association(kind) {
+            Ok(backup) => backup,
+            Err(error) => {
+                let rollback = restore_file_associations(&backups)
+                    .err()
+                    .map(|rollback_error| format!("; rollback failed: {rollback_error}"))
+                    .unwrap_or_default();
+                return Err(format!(
+                    "failed to inspect {kind} association: {error:#}{rollback}"
+                ));
+            }
+        };
+        backups.push(backup);
+        if let Err(error) = winint::set_file_association(kind, enabled, &exe) {
+            let rollback = restore_file_associations(&backups)
+                .err()
+                .map(|rollback_error| format!("; rollback failed: {rollback_error}"))
+                .unwrap_or_default();
+            return Err(format!(
+                "failed to update {kind} association: {error:#}{rollback}"
+            ));
         }
     }
+    Ok(backups)
+}
+
+pub(crate) fn refresh_file_associations(settings: &Settings) -> Result<(), String> {
+    let Some(exe) = release_exe()? else {
+        return Ok(());
+    };
+    for (kind, enabled) in [
+        ("torrent", settings.assoc_torrent),
+        ("magnet", settings.assoc_magnet),
+    ] {
+        if enabled {
+            winint::ensure_file_association(kind, &exe)
+                .map_err(|e| format!("failed to refresh {kind} association: {e:#}"))?;
+        } else {
+            winint::remove_owned_file_association(kind)
+                .map_err(|e| format!("failed to remove stale {kind} association: {e:#}"))?;
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -240,6 +327,25 @@ pub fn suggest_video_file(
 }
 
 #[tauri::command]
-pub fn take_pending_source() -> Option<serde_json::Value> {
+pub fn take_pending_source() -> Option<crate::PendingSource> {
     crate::PENDING_SOURCE.lock().unwrap().take()
+}
+
+#[tauri::command]
+pub fn acknowledge_pending_source(delivery_id: u64) -> bool {
+    let mut pending = crate::PENDING_SOURCE.lock().unwrap();
+    if pending
+        .as_ref()
+        .is_some_and(|source| source.delivery_id == delivery_id)
+    {
+        *pending = None;
+        true
+    } else {
+        false
+    }
+}
+
+#[tauri::command]
+pub fn take_startup_error() -> Option<String> {
+    crate::STARTUP_ERROR.lock().unwrap().take()
 }
