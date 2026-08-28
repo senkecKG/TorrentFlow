@@ -89,6 +89,7 @@ export function AddTorrentModal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
+      e.stopPropagation();
       onClose();
     };
     document.addEventListener("keydown", onKey);

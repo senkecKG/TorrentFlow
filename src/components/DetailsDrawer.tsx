@@ -16,7 +16,7 @@ import {
   streamUrl,
   suggestVideoFile,
 } from "../lib/api";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   errMsg,
   formatBytes,
@@ -311,7 +311,11 @@ export function DetailsDrawer({
   const t = torrent;
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -433,7 +437,7 @@ export function DetailsDrawer({
                     aria-label="Open folder in Explorer"
                     title="Open in Explorer"
                     onClick={() =>
-                      openPath(t.savePath).catch((e) => toast("error", "Could not open folder", errMsg(e)))
+                      revealItemInDir(t.savePath).catch((e) => toast("error", "Could not open folder", errMsg(e)))
                     }
                     className="icon-btn h-5 w-5 shrink-0"
                   >
