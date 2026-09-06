@@ -39,9 +39,10 @@ export function TorrentList({
     return <EmptyState view={view} onAdd={onAdd} />;
   }
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-w-[984px]">
       <div
-        className={`${ROW_GRID} shrink-0 border-b border-hairline pb-1.5 text-[10px] font-medium tracking-wider text-ink-3 uppercase`}
+        className={`${ROW_GRID} sticky top-0 z-10 border-b border-hairline bg-page pb-1.5 text-[10px] font-medium tracking-wider text-ink-3 uppercase`}
       >
         <input
           ref={selectAllRef}
@@ -60,7 +61,6 @@ export function TorrentList({
           </div>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
         {torrents.map((t, i) => (
           <TorrentRow
             key={t.id}

@@ -20,7 +20,7 @@ import { StatusPill } from "./StatusPill";
 import { Dropdown, type MenuItemDef } from "./Menu";
 
 export const ROW_GRID =
-  "grid min-w-[850px] grid-cols-[20px_minmax(140px,1fr)_96px_76px_minmax(110px,1fr)_78px_58px_70px_148px] items-center gap-x-2 px-3";
+  "grid min-w-[984px] grid-cols-[20px_minmax(140px,1fr)_96px_76px_minmax(110px,1fr)_78px_58px_70px_148px] items-center gap-x-2 px-3";
 
 export interface RowActions {
   onSelect: (t: TorrentDto) => void;

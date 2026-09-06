@@ -403,7 +403,7 @@ function Shell() {
       <StatusBar session={snapshot?.session ?? null} />
 
       {drawerTorrent && (
-        <DetailsDrawer torrent={drawerTorrent} onClose={() => setDrawerId(null)} toast={toast} />
+        <DetailsDrawer key={drawerTorrent.id} torrent={drawerTorrent} onClose={() => setDrawerId(null)} toast={toast} />
       )}
       {addModal && (
         <AddTorrentModal

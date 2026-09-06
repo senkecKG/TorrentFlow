@@ -263,11 +263,8 @@ pub fn is_video_file(name: &str) -> bool {
     is_video(name)
 }
 
-pub async fn spawn_server(session: Arc<Session>) -> Result<u16> {
-    let state = StreamServer {
-        session,
-        active: Arc::new(AtomicUsize::new(0)),
-    };
+pub async fn spawn_server(session: Arc<Session>, active: Arc<AtomicUsize>) -> Result<u16> {
+    let state = StreamServer { session, active };
     let app = Router::new()
         .route("/stream/{id}/{file}", get(stream_handler))
         .with_state(state);

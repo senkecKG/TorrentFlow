@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, State};
@@ -11,7 +11,7 @@ use crate::winint;
 
 pub struct AppState {
     pub engine: Engine,
-    pub settings: Mutex<Settings>,
+    pub settings: Arc<Mutex<Settings>>,
     pub app: AppHandle,
 }
 

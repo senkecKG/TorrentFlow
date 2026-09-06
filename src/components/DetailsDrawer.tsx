@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   Clipboard,
@@ -72,6 +72,7 @@ function StreamingSection({
   const [suggested, setSuggested] = useState<number | null>(null);
   const [phase, setPhase] = useState<StreamPhase>("idle");
   const [buffer, setBuffer] = useState(0);
+  const videoKey = videoFiles.map((file) => file.index).join(",");
 
   useEffect(() => {
     let alive = true;
@@ -81,7 +82,7 @@ function StreamingSection({
     return () => {
       alive = false;
     };
-  }, [t.id]);
+  }, [t.id, videoKey]);
 
   const buffering = phase === "playing" && buffer < 0.01 && t.downloadBps < 65536;
 
@@ -91,29 +92,40 @@ function StreamingSection({
 
   useEffect(() => {
     if (phase === "idle") return;
-    if (suggested == null || t.state !== "downloading") {
-      if (phase === "preparing") setPhase("idle");
-      return;
-    }
-    const iv = setInterval(async () => {
+    if (suggested == null) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
       try {
         const b = await bufferStatus(t.id, suggested, 0);
+        if (cancelled) return;
         setBuffer(b);
         if (phase === "preparing" && b >= READY_THRESHOLD) {
           try {
             await launchVlc(t.id, suggested);
+            if (cancelled) return;
             toast("success", "Playing in VLC", "Stream is being served locally.");
+            setPhase("playing");
           } catch (e) {
+            if (cancelled) return;
             toast("error", "Could not start VLC", errMsg(e));
+            setPhase("idle");
           }
-          setPhase("playing");
+          return;
         }
-      } catch {
-        clearInterval(iv);
+        timer = setTimeout(poll, 800);
+      } catch (e) {
+        if (cancelled) return;
+        setPhase("idle");
+        toast("error", "Could not check stream readiness", errMsg(e));
       }
-    }, 800);
-    return () => clearInterval(iv);
-  }, [phase, suggested, t.state, t.id, toast]);
+    };
+    timer = setTimeout(poll, 800);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [phase, suggested, t.id, toast]);
 
   if (videoFiles.length === 0) return null;
 
@@ -157,7 +169,7 @@ function StreamingSection({
       <div className="flex items-center gap-2">
         {others.length > 0 ? (
           <>
-            <button onClick={() => watch()} className="btn-primary flex-1">
+            <button disabled={suggested == null} onClick={() => watch()} className="btn-primary flex-1">
               <Play size={14} />
               Watch in VLC
               <span className="ml-1 hidden min-w-0 truncate opacity-60 xl:inline" title={mainName}>
@@ -177,12 +189,12 @@ function StreamingSection({
             />
           </>
         ) : (
-          <button onClick={() => watch()} className="btn-primary flex-1">
+          <button disabled={suggested == null} onClick={() => watch()} className="btn-primary flex-1">
             <Play size={14} />
             Watch in VLC
           </button>
         )}
-        <button onClick={copyUrl} className="btn-secondary">
+        <button disabled={suggested == null} onClick={copyUrl} className="btn-secondary">
           <Clipboard size={13} />
           Copy stream URL
         </button>
@@ -194,7 +206,7 @@ function StreamingSection({
             type="checkbox"
             checked={phase !== "idle"}
             onChange={(e) => setPhase(e.target.checked ? "preparing" : "idle")}
-            disabled={phase === "playing"}
+            disabled={phase === "playing" || suggested == null}
             className="h-3.5 w-3.5"
           />
           Play when ready
@@ -226,12 +238,30 @@ function StreamingSection({
 
 function FilesTab({ t, toast }: { t: TorrentDto; toast: PushFn }) {
   const [sel, setSel] = useState<Set<number>>(() => new Set(t.files.filter((f) => f.selected).map((f) => f.index)));
+  const [saving, setSaving] = useState(false);
+  const pending = useRef(false);
+  const selectionKey = t.files.filter((f) => f.selected).map((f) => f.index).join(",");
+  useEffect(() => {
+    if (!pending.current) setSel(new Set(selectionKey ? selectionKey.split(",").map(Number) : []));
+  }, [selectionKey]);
   const locked = t.state === "seeding" || t.progress >= 1 || t.completedAt != null;
   const selectedBytes = t.files.reduce((acc, f) => (sel.has(f.index) ? acc + f.len : acc), 0);
 
-  function commit(next: Set<number>) {
+  async function commit(next: Set<number>) {
+    if (pending.current || locked) return;
+    const previous = sel;
+    pending.current = true;
+    setSaving(true);
     setSel(next);
-    setTorrentFiles(t.id, [...next]).catch((e) => toast("error", "Could not update files", errMsg(e)));
+    try {
+      await setTorrentFiles(t.id, [...next]);
+    } catch (e) {
+      setSel(previous);
+      toast("error", "Could not update files", errMsg(e));
+    } finally {
+      pending.current = false;
+      setSaving(false);
+    }
   }
 
   return (
@@ -242,14 +272,14 @@ function FilesTab({ t, toast }: { t: TorrentDto; toast: PushFn }) {
         </span>
         <div className="flex gap-3">
           <button
-            disabled={locked}
+            disabled={locked || saving}
             onClick={() => commit(new Set(t.files.map((f) => f.index)))}
             className="text-accent hover:underline disabled:pointer-events-none disabled:opacity-40"
           >
             Select all
           </button>
           <button
-            disabled={locked}
+            disabled={locked || saving}
             onClick={() => commit(new Set())}
             className="text-ink-2 hover:text-ink hover:underline disabled:pointer-events-none disabled:opacity-40"
           >
@@ -268,7 +298,7 @@ function FilesTab({ t, toast }: { t: TorrentDto; toast: PushFn }) {
             <input
               type="checkbox"
               checked={sel.has(f.index)}
-              disabled={locked}
+              disabled={locked || saving}
               onChange={() => {
                 const next = new Set(sel);
                 if (next.has(f.index)) next.delete(f.index);
@@ -312,7 +342,7 @@ export function DetailsDrawer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || e.defaultPrevented || document.querySelector('[aria-modal="true"], [role="menu"]')) return;
       e.stopPropagation();
       onClose();
     };
@@ -321,6 +351,7 @@ export function DetailsDrawer({
   }, [onClose]);
 
   const [stream, setStream] = useState<{ phase: StreamPhase; buffer: number }>({ phase: "idle", buffer: 0 });
+  const onPhaseChange = useCallback((phase: StreamPhase, buffer: number) => setStream({ phase, buffer }), []);
 
   const ratio = t.totalBytes > 0 ? t.uploadedBytes / t.totalBytes : 0;
   const activity = [...t.activity].sort((a, b) => b.ts - a.ts);
@@ -383,7 +414,7 @@ export function DetailsDrawer({
 
         {tab === "overview" && (
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-            <StreamingSection t={t} toast={toast} onPhaseChange={(phase, buffer) => setStream({ phase, buffer })} />
+            <StreamingSection t={t} toast={toast} onPhaseChange={onPhaseChange} />
 
             <div className="rounded-lg border border-hairline bg-panel-2 p-3">
               <div className="mb-2 flex items-center gap-2">

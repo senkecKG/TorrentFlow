@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, HardDrive, Loader2 } from "lucide-react";
-import type { PreviewSource, Settings, Source } from "../lib/types";
+import { FolderOpen, HardDrive, Loader2, X } from "lucide-react";
+import type { PreviewSource, Source } from "../lib/types";
 import {
   addSource,
   defaultDownloadDir,
@@ -27,7 +27,7 @@ export function AddTorrentModal({
   toast: PushFn;
 }) {
   const [step, setStep] = useState<Step>("source");
-  const [magnet, setMagnet] = useState("");
+  const [magnet, setMagnet] = useState(initialSource?.kind === "magnet" ? initialSource.url : "");
   const [downloadDir, setDownloadDir] = useState<string | null>(null);
   const [freeSpace, setFreeSpace] = useState<number | null>(null);
   const [pendingSrc, setPendingSrc] = useState<Source | null>(null);
@@ -36,23 +36,40 @@ export function AddTorrentModal({
   const [busy, setBusy] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const started = useRef(false);
+  const mounted = useRef(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocus = useRef(document.activeElement as HTMLElement | null);
 
   useEffect(() => {
-    Promise.all([getSettings(), defaultDownloadDir()])
-      .then(([s, d]) => applyDir((s as Settings).downloadDir ?? d))
-      .catch(() => {});
+    mounted.current = true;
+    return () => { mounted.current = false; };
   }, []);
 
-  function applyDir(dir: string | null) {
-    setDownloadDir(dir);
-    diskFreeBytes(dir)
-      .then(setFreeSpace)
+  useEffect(() => {
+    let cancelled = false;
+    getSettings()
+      .then(async (s) => s.downloadDir ?? await defaultDownloadDir())
+      .then((dir) => { if (!cancelled) setDownloadDir((current) => current ?? dir); })
+      .catch((e) => { if (!cancelled) toast("error", "Could not load download folder", errMsg(e)); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFreeSpace(null);
+    diskFreeBytes(downloadDir)
+      .then((bytes) => { if (!cancelled) setFreeSpace(bytes); })
       .catch(() => {});
-  }
+    return () => { cancelled = true; };
+  }, [downloadDir]);
 
   async function pickFolder() {
-    const dir = await open({ directory: true });
-    if (typeof dir === "string") applyDir(dir);
+    try {
+      const dir = await open({ directory: true });
+      if (mounted.current && typeof dir === "string") setDownloadDir(dir);
+    } catch (e) {
+      if (mounted.current) toast("error", "Could not open folder picker", errMsg(e));
+    }
   }
 
   async function submitSource(src: Source) {
@@ -62,6 +79,7 @@ export function AddTorrentModal({
     setStep("fetching");
     try {
       const p = await previewSource(src);
+      if (!mounted.current) return;
       if (p.duplicate && p.id != null) {
         toast("info", "Already in your list", "Selecting the existing torrent.");
         onAdded(p.id);
@@ -72,10 +90,12 @@ export function AddTorrentModal({
       setSelected(new Set(p.files.map((f) => f.index)));
       setStep("files");
     } catch (e) {
+      if (!mounted.current) return;
       setFetchError(errMsg(e));
+      setStep("source");
       toast("error", "Could not read torrent", errMsg(e));
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -86,21 +106,44 @@ export function AddTorrentModal({
   }, []);
 
   useEffect(() => {
+    if (!dialogRef.current?.contains(document.activeElement)) dialogRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Tab") {
+        const controls = dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea, input:not(:disabled), [tabindex="0"]');
+        if (!controls?.length) return;
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (!dialogRef.current?.contains(document.activeElement) || document.activeElement === dialogRef.current || (e.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+        }
+        return;
+      }
       if (e.key !== "Escape") return;
       e.preventDefault();
       e.stopPropagation();
       onClose();
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (previousFocus.current?.isConnected) previousFocus.current.focus();
+    };
   }, []);
 
+  useEffect(() => {
+    if (!dialogRef.current?.contains(document.activeElement)) dialogRef.current?.focus();
+  }, [step]);
+
   async function browseFile() {
-    const path = await open({
-      filters: [{ name: "Torrent", extensions: ["torrent"] }],
-    });
-    if (typeof path === "string") submitSource({ kind: "torrentPath", path });
+    try {
+      const path = await open({
+        filters: [{ name: "Torrent", extensions: ["torrent"] }],
+      });
+      if (mounted.current && typeof path === "string") submitSource({ kind: "torrentPath", path });
+    } catch (e) {
+      if (mounted.current) toast("error", "Could not open torrent picker", errMsg(e));
+    }
   }
 
   function toggle(index: number) {
@@ -113,7 +156,7 @@ export function AddTorrentModal({
   }
 
   async function confirmAdd() {
-    if (busy || !meta || !pendingSrc) return;
+    if (busy || !meta || !pendingSrc || selected.size === 0) return;
     setBusy(true);
     try {
       const [id, duplicate] = await addSource(
@@ -121,14 +164,15 @@ export function AddTorrentModal({
         downloadDir,
         selected.size === meta.files.length ? null : [...selected],
       );
+      if (!mounted.current) return;
       if (duplicate) {
         toast("info", "Already in your list", "Selecting the existing torrent.");
       }
       onAdded(id);
     } catch (e) {
-      toast("error", "Could not add torrent", errMsg(e));
+      if (mounted.current) toast("error", "Could not add torrent", errMsg(e));
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
@@ -136,21 +180,25 @@ export function AddTorrentModal({
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" />
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Add torrent"
-        className="relative z-10 flex max-h-[85vh] w-[520px] animate-pop-in flex-col rounded-lg border border-hairline bg-panel-2 shadow-2xl shadow-black/60"
+        className="relative z-10 flex max-h-[85vh] w-[520px] max-w-[calc(100vw-2rem)] animate-pop-in flex-col rounded-lg border border-hairline bg-panel-2 shadow-2xl shadow-black/60"
       >
-        <div className="shrink-0 border-b border-hairline px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-3">
           <h2 className="text-[14px] font-semibold text-ink">
             {step === "files" ? "Choose files to download" : "Add Torrent"}
           </h2>
+          <button onClick={onClose} aria-label="Close add torrent" className="icon-btn"><X size={16} /></button>
         </div>
 
         {step === "source" && (
           <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-4">
             <textarea
               autoFocus
+              aria-label="Magnet link"
               value={magnet}
               onChange={(e) => setMagnet(e.target.value)}
               onKeyDown={(e) => {
@@ -164,13 +212,14 @@ export function AddTorrentModal({
               className="input h-auto resize-none py-2 leading-relaxed"
             />
             <button
-              disabled={busy}
+              disabled={busy || !magnet.trim()}
               onClick={() => magnet.trim() && submitSource({ kind: "magnet", url: magnet.trim() })}
               className="btn-primary w-full"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : null}
               Add Magnet Link
             </button>
+            {fetchError && <p role="alert" className="text-[11px] break-words text-danger">{fetchError}</p>}
             <div className="flex items-center gap-3 text-[11px] text-ink-3">
               <span className="h-px flex-1 bg-hairline" />
               or
@@ -194,7 +243,7 @@ export function AddTorrentModal({
               </div>
               <div className="flex items-center gap-1.5 text-[11px] tabular-nums text-ink-3">
                 <HardDrive size={12} />
-                {freeSpace == null ? "Checking free space…" : `${formatBytes(freeSpace)} free`}
+                {freeSpace == null ? "Free space unavailable" : `${formatBytes(freeSpace)} free`}
               </div>
             </div>
           </div>
@@ -204,11 +253,7 @@ export function AddTorrentModal({
           <div className="flex flex-col items-center gap-3 px-4 py-10">
             <Loader2 size={24} className="animate-spin text-accent" />
             <div className="text-[13px] font-medium text-ink">Fetching torrent information…</div>
-            {fetchError ? (
-              <p className="max-w-sm text-center text-[11px] break-words text-danger">{fetchError}</p>
-            ) : (
-              <p className="text-[11px] text-ink-3">This can take a moment depending on swarm health.</p>
-            )}
+            <p className="text-[11px] text-ink-3">This can take a moment depending on swarm health.</p>
             <button onClick={onClose} className="btn-secondary mt-2">
               Cancel
             </button>

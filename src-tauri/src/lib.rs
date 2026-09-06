@@ -96,7 +96,7 @@ pub fn run() {
                     .expect("engine init failed");
                 let state = AppState {
                     engine: engine.clone(),
-                    settings: Mutex::new(settings.lock().unwrap().clone()),
+                    settings: settings.clone(),
                     app: handle.clone(),
                 };
                 handle.manage(state);

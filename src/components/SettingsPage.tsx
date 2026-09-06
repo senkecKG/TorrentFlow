@@ -51,29 +51,42 @@ function LimitInput({ bps, onBytes }: { bps: number | null; onBytes: (v: number 
 export function SettingsPage({ toast }: { toast: PushFn }) {
   const [base, setBase] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
-  const [displayDir, setDisplayDir] = useState<string>("");
+  const [systemDir, setSystemDir] = useState<string>("");
   const [freeSpace, setFreeSpace] = useState<number | null>(null);
   const [vlc, setVlc] = useState<VlcStatus | null>(null);
   const [ratioMode, setRatioMode] = useState<"unlimited" | "1" | "2" | "custom">("unlimited");
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const displayDir = draft?.downloadDir ?? systemDir;
 
-  useEffect(() => {
-    getSettings()
+  function loadSettings() {
+    setLoadError(null);
+    return getSettings()
       .then(async (s) => {
         const dir = s.downloadDir ?? (await defaultDownloadDir().catch(() => ""));
-        setDisplayDir(dir);
+        setSystemDir(dir);
         setBase(s);
         setDraft(s);
         setRatioMode(s.stopRatio == null ? "unlimited" : s.stopRatio === 1 ? "1" : s.stopRatio === 2 ? "2" : "custom");
       })
-      .catch((e) => toast("error", "Could not load settings", errMsg(e)));
+      .catch((e) => {
+        setLoadError(errMsg(e));
+        toast("error", "Could not load settings", errMsg(e));
+      });
+  }
+
+  useEffect(() => {
+    void loadSettings();
     vlcStatus().then(setVlc).catch(() => {});
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    setFreeSpace(null);
     diskFreeBytes(displayDir || undefined)
-      .then(setFreeSpace)
+      .then((bytes) => { if (!cancelled) setFreeSpace(bytes); })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [displayDir]);
 
   const dirty = base != null && draft != null && JSON.stringify(base) !== JSON.stringify(draft);
@@ -86,16 +99,21 @@ export function SettingsPage({ toast }: { toast: PushFn }) {
   const vlcMissing = vlc != null && !vlc.found && !draft?.vlcPath;
 
   async function pickDownloadDir() {
-    const dir = await open({ directory: true });
-    if (typeof dir === "string") {
-      patch({ downloadDir: dir });
-      setDisplayDir(dir);
+    try {
+      const dir = await open({ directory: true });
+      if (typeof dir === "string") patch({ downloadDir: dir });
+    } catch (e) {
+      toast("error", "Could not open folder picker", errMsg(e));
     }
   }
 
   async function pickVlcExe() {
-    const path = await open({ filters: [{ name: "VLC", extensions: ["exe"] }] });
-    if (typeof path === "string") patch({ vlcPath: path });
+    try {
+      const path = await open({ filters: [{ name: "VLC", extensions: ["exe"] }] });
+      if (typeof path === "string") patch({ vlcPath: path });
+    } catch (e) {
+      toast("error", "Could not open VLC picker", errMsg(e));
+    }
   }
 
   async function save() {
@@ -115,7 +133,9 @@ export function SettingsPage({ toast }: { toast: PushFn }) {
 
   if (!draft) {
     return (
-      <div className="flex flex-1 items-center justify-center text-[12px] text-ink-3">Loading settings…</div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-[12px] text-ink-3">
+        {loadError ? <><p role="alert">Could not load settings: {loadError}</p><button className="btn-secondary" onClick={loadSettings}>Try again</button></> : "Loading settings…"}
+      </div>
     );
   }
 
@@ -264,6 +284,7 @@ export function SettingsPage({ toast }: { toast: PushFn }) {
                   setRatioMode(base.stopRatio == null ? "unlimited" : base.stopRatio === 1 ? "1" : base.stopRatio === 2 ? "2" : "custom");
                 }
               }}
+              disabled={saving}
               className="btn-ghost"
             >
               Discard

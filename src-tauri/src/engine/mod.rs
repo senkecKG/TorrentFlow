@@ -105,7 +105,8 @@ impl Engine {
             .context("failed to start torrent engine")?;
         let api = Api::new(session.clone(), None);
 
-        let port = stream::spawn_server(session.clone()).await?;
+        let streaming_active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let port = stream::spawn_server(session.clone(), streaming_active.clone()).await?;
         let inner = Arc::new(EngineInner {
             session,
             api,
@@ -117,7 +118,7 @@ impl Engine {
             auto_paused: std::sync::Mutex::new(HashSet::new()),
             last_finished: std::sync::Mutex::new(HashMap::new()),
             sleep: AsyncMutex::new(None),
-            streaming_active: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            streaming_active,
             stream_port: AtomicU16::new(port),
         });
         Ok(Engine(inner))
@@ -324,8 +325,8 @@ impl Engine {
         .context("timed out reading torrent information")?
         .map_err(|e| friendly_add_error(source.clone(), e))?;
         match response {
-            librqbit::AddTorrentResponse::Added(_, handle)
-            | librqbit::AddTorrentResponse::AlreadyManaged(_, handle) => {
+            librqbit::AddTorrentResponse::AlreadyManaged(_, handle) => Ok((handle.id(), true)),
+            librqbit::AddTorrentResponse::Added(_, handle) => {
                 let hex = Self::id20_hex(&handle.info_hash());
                 {
                     let mut meta = self.0.meta.lock().unwrap();
@@ -1047,7 +1048,10 @@ fn source_info_hash(source: &SourceKind) -> Result<Option<String>> {
             }
             let hash = lower[8..]
                 .split('&')
-                .find_map(|p| p.strip_prefix("xt=urn:btih:"))
+                .find_map(|p| {
+                    p.strip_prefix("xt=")
+                        .filter(|xt| xt.starts_with("urn:btih:"))
+                })
                 .ok_or_else(|| anyhow!("Invalid magnet link: missing info hash"))?;
             Ok(hex_of_btih(hash))
         }
@@ -1065,12 +1069,14 @@ fn hex_of_btih(xt: &str) -> Option<String> {
     let rest = xt.strip_prefix("urn:btih:")?;
     if rest.len() == 40 && rest.chars().all(|c| c.is_ascii_hexdigit()) {
         Some(rest.to_ascii_lowercase())
-    } else {
+    } else if rest.len() == 32 {
         if let Ok(bytes) = base32_decode(&rest.to_uppercase()) {
             Some(bytes.iter().map(|b| format!("{b:02x}")).collect())
         } else {
             None
         }
+    } else {
+        None
     }
 }
 
@@ -1134,7 +1140,8 @@ fn meta_order_len(engine: &Engine) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{clear_completion, display_progress, record_completion};
+    use super::types::SourceKind;
+    use super::{clear_completion, display_progress, record_completion, source_info_hash};
     use crate::settings::MetaStore;
 
     #[test]
@@ -1160,5 +1167,30 @@ mod tests {
         assert!(clear_completion(&mut meta, "abc123"));
         assert!(!clear_completion(&mut meta, "abc123"));
         assert_eq!(meta.entries["abc123"].completed_at, None);
+    }
+
+    #[test]
+    fn magnet_info_hash_is_normalized_for_duplicate_detection() {
+        let expected = "0123456789abcdef0123456789abcdef01234567";
+        for hash in [
+            "0123456789ABCDEF0123456789ABCDEF01234567",
+            "AERUKZ4JVPG66AJDIVTYTK6N54ASGRLH",
+        ] {
+            let source = SourceKind::Magnet {
+                url: format!("magnet:?dn=example&xt=urn:btih:{hash}&tr=https://tracker.example"),
+            };
+            assert_eq!(
+                source_info_hash(&source).unwrap().as_deref(),
+                Some(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn incomplete_base32_hash_is_not_used_for_duplicate_detection() {
+        let source = SourceKind::Magnet {
+            url: "magnet:?xt=urn:btih:ABC".into(),
+        };
+        assert_eq!(source_info_hash(&source).unwrap(), None);
     }
 }
