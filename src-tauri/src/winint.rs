@@ -43,6 +43,21 @@ fn is_supported() -> bool {
     cfg!(target_os = "windows")
 }
 
+/// Modal error box that works before the event loop starts.
+pub fn show_fatal_error(title: &str, message: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let (title, message) = (wide(title), wide(message));
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            message.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
 pub fn disk_free_bytes(path: &std::path::Path) -> Option<u64> {
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     let wide: Vec<u16> = std::ffi::OsStr::encode_wide(path.as_os_str())

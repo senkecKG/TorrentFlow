@@ -91,9 +91,16 @@ pub fn run() {
             let settings = std::sync::Arc::new(Mutex::new(loaded_settings));
 
             tauri::async_runtime::block_on(async {
-                let engine = Engine::init(handle.clone(), settings.clone())
-                    .await
-                    .expect("engine init failed");
+                let engine = match Engine::init(handle.clone(), settings.clone()).await {
+                    Ok(engine) => engine,
+                    Err(e) => {
+                        winint::show_fatal_error(
+                            "TorrentFlow could not start",
+                            &format!("The torrent engine failed to start.\n\n{e:#}"),
+                        );
+                        std::process::exit(1);
+                    }
+                };
                 let state = AppState {
                     engine: engine.clone(),
                     settings: settings.clone(),

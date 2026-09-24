@@ -3,7 +3,7 @@ pub mod types;
 
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,12 +11,13 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use librqbit::limits::LimitsConfig;
 use librqbit::{
-    AddTorrent, AddTorrentOptions, Api, ListenerMode, ListenerOptions, ManagedTorrent, Session,
-    SessionOptions, SessionPersistenceConfig,
+    AddTorrent, AddTorrentOptions, Api, DhtSessionConfig, ListenerMode, ListenerOptions,
+    ManagedTorrent, Session, SessionOptions, SessionPersistenceConfig,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex as AsyncMutex;
+use tokio_util::sync::CancellationToken;
 
 use crate::settings::{config_dir, MetaStore, Settings, TorrentMetaEntry};
 use crate::winint::SleepGuard;
@@ -55,6 +56,42 @@ impl Clone for Engine {
     }
 }
 
+async fn start_session(
+    default_dir: &Path,
+    persist_dir: &Path,
+    dl: Option<NonZeroU32>,
+    ul: Option<NonZeroU32>,
+    dht_port: Option<u16>,
+) -> Result<Arc<Session>> {
+    let token = CancellationToken::new();
+    let opts = SessionOptions {
+        cancellation_token: Some(token.clone()),
+        dht: Some(DhtSessionConfig {
+            port: dht_port,
+            ..Default::default()
+        }),
+        persistence: Some(SessionPersistenceConfig::Json {
+            folder: Some(persist_dir.to_path_buf()),
+        }),
+        ratelimits: LimitsConfig {
+            download_bps: dl,
+            upload_bps: ul,
+        },
+        listen: Some(ListenerOptions {
+            mode: ListenerMode::TcpAndUtp,
+            enable_upnp_port_forwarding: true,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let result = Session::new_with_opts(default_dir.to_path_buf(), opts).await;
+    if result.is_err() {
+        // stop listeners a failed attempt already spawned
+        token.cancel();
+    }
+    result
+}
+
 fn now_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -83,26 +120,18 @@ impl Engine {
             )
         };
 
-        let opts = SessionOptions {
-            persistence: Some(SessionPersistenceConfig::Json {
-                folder: Some(persist_dir),
-            }),
-            ratelimits: LimitsConfig {
-                download_bps: dl,
-                upload_bps: ul,
-            },
-            listen: Some(ListenerOptions {
-                mode: ListenerMode::TcpAndUtp,
-                enable_upnp_port_forwarding: true,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
         let default_dir = default_download_dir(settings.clone());
         std::fs::create_dir_all(&default_dir)?;
-        let session = Session::new_with_opts(default_dir, opts)
-            .await
-            .context("failed to start torrent engine")?;
+        // The DHT rebinds the UDP port saved from the previous run. Windows can
+        // reserve that port after a reboot (Hyper-V / WSL / Docker exclusions),
+        // which fails with WSAEACCES, so retry on a fresh OS-assigned port;
+        // librqbit persists the new port for later launches.
+        let session = match start_session(&default_dir, &persist_dir, dl, ul, None).await {
+            Ok(session) => session,
+            Err(_) => start_session(&default_dir, &persist_dir, dl, ul, Some(0))
+                .await
+                .context("failed to start torrent engine")?,
+        };
         let api = Api::new(session.clone(), None);
 
         let streaming_active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
