@@ -54,8 +54,20 @@ impl Settings {
     pub fn save(&self, dir: &std::path::Path) -> anyhow::Result<()> {
         std::fs::create_dir_all(dir)?;
         let path = dir.join("settings.json");
-        Ok(std::fs::write(path, serde_json::to_string_pretty(self)?)?)
+        Ok(write_atomic(&path, &serde_json::to_string_pretty(self)?)?)
     }
+}
+
+/// Writes through a synced temp file, so a crash mid-save can't leave a
+/// truncated file that would load as defaults.
+fn write_atomic(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let tmp = path.with_extension("json.tmp");
+    let mut file = std::fs::File::create(&tmp)?;
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+    std::fs::rename(&tmp, path)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -84,7 +96,7 @@ impl MetaStore {
 
     pub fn save(&self, dir: &std::path::Path) {
         if let Ok(s) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(dir.join("torrents.json"), s);
+            let _ = write_atomic(&dir.join("torrents.json"), &s);
         }
     }
 }

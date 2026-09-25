@@ -143,6 +143,14 @@ async fn stream_handler(
     AxPath((id, file_id)): AxPath<(usize, usize)>,
     headers: HeaderMap,
 ) -> Response {
+    // Only local players: a web page using DNS rebinding sends its own Host.
+    let local_host = headers
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .is_some_and(|h| h.starts_with("127.0.0.1:") || h.starts_with("localhost:"));
+    if !local_host {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     let handle = state.session.get(id.into()).ok_or(StatusCode::NOT_FOUND);
     let handle: Arc<ManagedTorrent> = match handle {
         Ok(h) => h,

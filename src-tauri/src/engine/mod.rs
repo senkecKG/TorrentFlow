@@ -38,6 +38,10 @@ struct EngineInner {
     api: Api,
     app: AppHandle,
     dir: PathBuf,
+    /// The session's default output folder; previews report paths under it.
+    session_dir: PathBuf,
+    /// Torrent-name subfolder per info hash, remembered from preview for add.
+    subfolders: std::sync::Mutex<HashMap<String, PathBuf>>,
     settings: Arc<std::sync::Mutex<Settings>>,
     meta: std::sync::Mutex<MetaStore>,
     activity: std::sync::Mutex<HashMap<usize, Vec<LogDto>>>,
@@ -141,6 +145,8 @@ impl Engine {
             api,
             app,
             dir,
+            session_dir: default_dir,
+            subfolders: std::sync::Mutex::new(HashMap::new()),
             settings,
             meta: std::sync::Mutex::new(meta),
             activity: std::sync::Mutex::new(HashMap::new()),
@@ -306,11 +312,20 @@ impl Engine {
                     .map(|s| s.into_owned())
                     .unwrap_or(display_name);
                 let total_bytes = files.iter().map(|f| f.len).sum();
+                let info_hash = Self::id20_hex(&r.info_hash);
+                // librqbit nests multi-file torrents in a sanitized name folder only
+                // when it picks the location itself; add_source reuses that folder.
+                if let Ok(sub) = r.output_folder.strip_prefix(&self.0.session_dir) {
+                    if !sub.as_os_str().is_empty() {
+                        let mut subfolders = self.0.subfolders.lock().unwrap();
+                        subfolders.insert(info_hash.clone(), sub.to_path_buf());
+                    }
+                }
                 Ok(PreviewSourceDto {
                     duplicate: false,
                     id: None,
                     name,
-                    info_hash: Self::id20_hex(&r.info_hash),
+                    info_hash,
                     total_bytes,
                     files,
                 })
@@ -326,15 +341,17 @@ impl Engine {
         only_files: Option<Vec<usize>>,
     ) -> Result<(usize, bool)> {
         // Duplicate detection before adding anything.
-        if let Some(hash) = source_info_hash(&source)? {
-            if let Some(existing) = self.find_by_hash(&hash) {
-                return Ok((existing.id(), true));
-            }
+        let hash = source_info_hash(&source)?;
+        if let Some(existing) = hash.as_deref().and_then(|h| self.find_by_hash(h)) {
+            return Ok((existing.id(), true));
         }
 
-        let folder = download_dir_override
+        let mut folder = download_dir_override
             .map(PathBuf::from)
             .unwrap_or_else(|| default_download_dir(self.0.settings.clone()));
+        if let Some(sub) = hash.and_then(|h| self.0.subfolders.lock().unwrap().remove(&h)) {
+            folder.push(sub);
+        }
 
         let (add, display_name) = Self::build_add(&source)?;
 
@@ -410,23 +427,17 @@ impl Engine {
     }
 
     pub async fn remove(&self, id: usize, delete_files: bool) -> Result<()> {
-        let name = self.get_handle(id)?.name().unwrap_or_default();
         self.0.session.delete(id.into(), delete_files).await?;
         self.prune_meta();
-        let suffix = if delete_files {
-            " and deleted files"
-        } else {
-            ""
-        };
-        self.log(id, "warn", format!("Removed \"{name}\"{suffix}"));
-        if delete_files {
-            self.emit_notify(
-                "removed",
-                "Torrent removed",
-                &format!("\"{name}\" was removed and its files were deleted."),
-            );
-        }
+        self.forget(id);
         Ok(())
+    }
+
+    /// librqbit reuses ids, so drop per-id state once a torrent is gone.
+    fn forget(&self, id: usize) -> Vec<LogDto> {
+        self.0.auto_paused.lock().unwrap().remove(&id);
+        self.0.last_finished.lock().unwrap().remove(&id);
+        self.0.activity.lock().unwrap().remove(&id).unwrap_or_default()
     }
 
     fn prune_meta(&self) {
@@ -463,6 +474,10 @@ impl Engine {
         let handle = self.get_handle(id)?;
         let bytes = handle.with_metadata(|m| m.torrent_bytes.clone())?;
         let folder = handle.output_folder().to_path_buf();
+        // Recheck re-adds the torrent; a missing drive would make that fail after the delete.
+        if !folder.is_dir() {
+            bail!("download folder {} is not available", folder.display());
+        }
         let only_files = handle.only_files();
         let was_user_paused = {
             let hex = Self::id20_hex(&handle.info_hash());
@@ -473,6 +488,7 @@ impl Engine {
                 .unwrap_or(false)
         };
         self.0.session.delete(id.into(), false).await?;
+        let history = self.forget(id);
         let opts = AddTorrentOptions {
             overwrite: true,
             paused: was_user_paused,
@@ -480,11 +496,16 @@ impl Engine {
             only_files,
             ..Default::default()
         };
-        self.0
+        let response = self
+            .0
             .session
             .add_torrent(AddTorrent::from_bytes(bytes), Some(opts))
             .await?;
-        self.log(id, "info", "Rechecking downloaded data");
+        // The re-added torrent usually gets a new id; keep its history with it.
+        if let Some(handle) = response.into_handle() {
+            self.0.activity.lock().unwrap().insert(handle.id(), history);
+            self.log(handle.id(), "info", "Rechecking downloaded data");
+        }
         Ok(())
     }
 
@@ -568,7 +589,8 @@ impl Engine {
                     .map(|e| e.user_paused)
                     .unwrap_or(false)
             };
-            if user_paused || finished || !has_metadata(handle) {
+            // Errored torrents wait for a manual Resume instead of holding a slot.
+            if user_paused || finished || !has_metadata(handle) || st(&stats) == "error" {
                 continue;
             }
             if st(&stats) != "live" {
@@ -687,6 +709,9 @@ impl Engine {
                 .map(|u| TrackerDto { url: u.to_string() })
                 .collect();
 
+            // One read of the torrent lock per snapshot, not one clone per file.
+            let only_files: Option<HashSet<usize>> =
+                handle.only_files().map(|files| files.into_iter().collect());
             let files: Vec<FileDto> = handle
                 .with_metadata(|md| {
                     md.file_infos
@@ -697,10 +722,7 @@ impl Engine {
                             path: fi.relative_filename.to_string_lossy().replace('\\', "/"),
                             len: fi.len,
                             downloaded: stats.file_progress.get(i).copied().unwrap_or(0),
-                            selected: handle
-                                .only_files()
-                                .map(|of| of.contains(&i))
-                                .unwrap_or(true),
+                            selected: only_files.as_ref().is_none_or(|of| of.contains(&i)),
                         })
                         .collect()
                 })
@@ -788,7 +810,7 @@ impl Engine {
         }
         self.save_meta();
         self.log(id, "success", "Download complete");
-        self.emit_notify("completed", "Download complete", name);
+        self.emit_notify("success", "Download complete", name);
     }
 
     fn emit_notify(&self, kind: &str, title: &str, message: &str) {

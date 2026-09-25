@@ -1,4 +1,8 @@
-use std::{io, os::windows::ffi::OsStrExt};
+use std::{
+    io,
+    os::windows::ffi::OsStrExt,
+    sync::{mpsc, OnceLock},
+};
 
 use winreg::{enums::*, RegKey, RegValue};
 
@@ -13,11 +17,7 @@ pub struct SleepGuard {
 impl SleepGuard {
     pub fn acquire() -> Self {
         if is_supported() {
-            unsafe {
-                windows_sys::Win32::System::Power::SetThreadExecutionState(
-                    ES_CONTINUOUS | ES_SYSTEM_REQUIRED,
-                );
-            }
+            set_keep_awake(true);
             return SleepGuard { active: true };
         }
         SleepGuard { active: false }
@@ -25,12 +25,33 @@ impl SleepGuard {
 
     pub fn release(&mut self) {
         if self.active {
-            unsafe {
-                windows_sys::Win32::System::Power::SetThreadExecutionState(ES_CONTINUOUS);
-            }
+            set_keep_awake(false);
             self.active = false;
         }
     }
+}
+
+/// SetThreadExecutionState is per-thread and async tasks hop between worker
+/// threads, so one long-lived thread owns the keep-awake request.
+fn set_keep_awake(on: bool) {
+    static TX: OnceLock<mpsc::Sender<bool>> = OnceLock::new();
+    let tx = TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<bool>();
+        std::thread::spawn(move || {
+            for on in rx {
+                let flags = if on {
+                    ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+                } else {
+                    ES_CONTINUOUS
+                };
+                unsafe {
+                    windows_sys::Win32::System::Power::SetThreadExecutionState(flags);
+                }
+            }
+        });
+        tx
+    });
+    let _ = tx.send(on);
 }
 
 impl Drop for SleepGuard {

@@ -271,6 +271,8 @@ pub fn launch_vlc(state: State<AppState>, torrent_id: usize, file_id: usize) -> 
         return Err("VLC was not found.".into());
     };
     let url = state.engine.stream_url(torrent_id, file_id);
+    // a queued torrent would never deliver data, so watching jumps the queue
+    state.engine.prioritize(torrent_id);
     // keep the torrent alive while VLC plays
     state.engine.streaming_active_add(1);
     let res = vlc::launch_vlc(&vlc_path, &url);
