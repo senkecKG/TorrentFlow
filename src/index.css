@@ -36,6 +36,11 @@
   }
 }
 
+:root {
+  /* dark native controls: checkboxes, select popups, number spinners */
+  color-scheme: dark;
+}
+
 html,
 body,
 #root {

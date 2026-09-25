@@ -21,6 +21,9 @@ import { Dropdown, type MenuItemDef } from "./Menu";
 
 export const ROW_GRID =
   "grid min-w-[984px] grid-cols-[20px_minmax(140px,1fr)_96px_76px_minmax(110px,1fr)_78px_58px_70px_148px] items-center gap-x-2 px-3";
+// Stretches the checkbox's hit area over the row padding, column gap and full row height.
+// Its label skips focus on mouse down so Space/F/V keep acting on the selection.
+export const CHECK_CELL = "-mr-2 -ml-3 flex items-center self-stretch pr-2 pl-3";
 
 export interface RowActions {
   onSelect: (t: TorrentDto) => void;
@@ -99,14 +102,19 @@ export const TorrentRow = memo(function TorrentRow({
             : ""
       } ${ROW_GRID}`}
     >
-      <input
-        type="checkbox"
-        checked={selected}
+      <label
+        className={CHECK_CELL}
+        onMouseDown={(event) => event.preventDefault()}
         onClick={(event) => event.stopPropagation()}
-        onChange={() => actions.onToggleSelection(t)}
-        className="h-3.5 w-3.5"
-        aria-label={`Select ${t.name || t.infoHash}`}
-      />
+      >
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => actions.onToggleSelection(t)}
+          className="h-3.5 w-3.5"
+          aria-label={`Select ${t.name || t.infoHash}`}
+        />
+      </label>
       <div className="min-w-0">
         <button
           type="button"

@@ -32,7 +32,8 @@ function Mark() {
 }
 
 export function TitleBar() {
-  const win = getCurrentWindow();
+  // getCurrentWindow() returns a new object per call; keep one so the effect runs once
+  const [win] = useState(getCurrentWindow);
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {

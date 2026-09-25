@@ -297,7 +297,14 @@ function Shell() {
       } else if ((event.ctrlKey || event.metaKey) && key === "a" && view !== "settings") {
         event.preventDefault();
         setSelectedIds(new Set(filtered.map((torrent) => torrent.id)));
-      } else if (!event.ctrlKey && !event.metaKey && !event.altKey && selectedTorrents.length > 0) {
+      } else if (
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.repeat &&
+        !target?.closest("aside") &&
+        selectedTorrents.length > 0
+      ) {
         if (event.key === "Escape") {
           event.preventDefault();
           setSelectedIds(new Set());
@@ -322,6 +329,7 @@ function Shell() {
   }, [busy, changeSelectedState, filtered, openAddModal, run, selectedTorrents, view, watchTorrent]);
 
   const drawerTorrent = drawerId == null ? null : (torrents.find((t) => t.id === drawerId) ?? null);
+  const closeDrawer = useCallback(() => setDrawerId(null), []);
   const collapsedRail = winWidth < 1100;
 
   async function confirmRemove(deleteFiles: boolean) {
@@ -341,7 +349,6 @@ function Shell() {
 
     const removedIds = new Set(targets.filter((torrent) => !failed.has(torrent.id)).map((torrent) => torrent.id));
     if (drawerId != null && removedIds.has(drawerId)) setDrawerId(null);
-    setSelectedIds(failed);
     setRemoveTargets([]);
     await refresh();
     setBusy(false);
@@ -366,6 +373,7 @@ function Shell() {
           onView={(nextView) => {
             setView(nextView);
             setSelectedIds(new Set());
+            setDrawerId(null);
           }}
           collapsed={collapsedRail}
         />
@@ -402,9 +410,7 @@ function Shell() {
       </div>
       <StatusBar session={snapshot?.session ?? null} />
 
-      {drawerTorrent && (
-        <DetailsDrawer key={drawerTorrent.id} torrent={drawerTorrent} onClose={() => setDrawerId(null)} toast={toast} />
-      )}
+      {drawerTorrent && <DetailsDrawer torrent={drawerTorrent} onClose={closeDrawer} toast={toast} />}
       {addModal && (
         <AddTorrentModal
           key={addModal.requestId}

@@ -244,11 +244,10 @@ function FilesTab({ t, toast }: { t: TorrentDto; toast: PushFn }) {
   useEffect(() => {
     if (!pending.current) setSel(new Set(selectionKey ? selectionKey.split(",").map(Number) : []));
   }, [selectionKey]);
-  const locked = t.state === "seeding" || t.progress >= 1 || t.completedAt != null;
   const selectedBytes = t.files.reduce((acc, f) => (sel.has(f.index) ? acc + f.len : acc), 0);
 
   async function commit(next: Set<number>) {
-    if (pending.current || locked) return;
+    if (pending.current) return;
     const previous = sel;
     pending.current = true;
     setSaving(true);
@@ -270,35 +269,22 @@ function FilesTab({ t, toast }: { t: TorrentDto; toast: PushFn }) {
         <span className="tabular-nums text-ink-3">
           {sel.size} / {t.files.length} selected · {formatBytes(selectedBytes)}
         </span>
-        <div className="flex gap-3">
-          <button
-            disabled={locked || saving}
-            onClick={() => commit(new Set(t.files.map((f) => f.index)))}
-            className="text-accent hover:underline disabled:pointer-events-none disabled:opacity-40"
-          >
-            Select all
-          </button>
-          <button
-            disabled={locked || saving}
-            onClick={() => commit(new Set())}
-            className="text-ink-2 hover:text-ink hover:underline disabled:pointer-events-none disabled:opacity-40"
-          >
-            Deselect all
-          </button>
-        </div>
+        <button
+          disabled={saving || sel.size === t.files.length}
+          onClick={() => commit(new Set(t.files.map((f) => f.index)))}
+          className="text-accent hover:underline disabled:pointer-events-none disabled:opacity-40"
+        >
+          Select all
+        </button>
       </div>
-      {locked && (
-        <p className="shrink-0 bg-panel px-4 py-1.5 text-[11px] text-ink-3">
-          File selection is locked because this torrent is complete.
-        </p>
-      )}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
         {t.files.map((f) => (
           <label key={f.index} className="flex cursor-default items-center gap-2.5 rounded-md px-1 py-1.5 hover:bg-white/[0.03]">
             <input
               type="checkbox"
               checked={sel.has(f.index)}
-              disabled={locked || saving}
+              // the engine needs at least one selected file
+              disabled={saving || (sel.size === 1 && sel.has(f.index))}
               onChange={() => {
                 const next = new Set(sel);
                 if (next.has(f.index)) next.delete(f.index);
@@ -337,9 +323,6 @@ export function DetailsDrawer({
   onClose: () => void;
   toast: PushFn;
 }) {
-  const [tab, setTab] = useState<Tab>("overview");
-  const t = torrent;
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented || document.querySelector('[aria-modal="true"], [role="menu"]')) return;
@@ -350,6 +333,21 @@ export function DetailsDrawer({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // Non-modal side panel: the list stays usable; X, Esc or a view change close it.
+  // Focusable so list shortcuts can tell when the user is working in here.
+  return (
+    <aside
+      tabIndex={-1}
+      aria-label={`Details for ${torrent.name}`}
+      className="fixed top-10 bottom-7 right-0 z-40 flex w-[420px] animate-slide-in flex-col border-l border-hairline bg-panel shadow-2xl shadow-black/50 outline-none"
+    >
+      <DrawerContent key={torrent.id} t={torrent} onClose={onClose} toast={toast} />
+    </aside>
+  );
+}
+
+function DrawerContent({ t, onClose, toast }: { t: TorrentDto; onClose: () => void; toast: PushFn }) {
+  const [tab, setTab] = useState<Tab>("overview");
   const [stream, setStream] = useState<{ phase: StreamPhase; buffer: number }>({ phase: "idle", buffer: 0 });
   const onPhaseChange = useCallback((phase: StreamPhase, buffer: number) => setStream({ phase, buffer }), []);
 
@@ -382,156 +380,149 @@ export function DetailsDrawer({
 
   return (
     <>
-      <div className="fixed inset-0 z-30" onClick={onClose} />
-      <aside
-        role="dialog"
-        aria-label={`Details for ${t.name}`}
-        className="fixed top-8 bottom-7 right-0 z-40 flex w-[420px] animate-slide-in flex-col border-l border-hairline bg-panel shadow-2xl shadow-black/50"
-      >
-        <header className="flex shrink-0 items-start justify-between gap-2 border-b border-hairline px-4 py-3">
-          <h2 className="line-clamp-2 text-[13px] leading-snug font-semibold text-ink" title={t.name}>
-            {t.name || t.infoHash}
-          </h2>
-          <button aria-label="Close details" onClick={onClose} className="icon-btn -mt-0.5 -mr-1">
-            <X size={15} />
+      <header className="flex shrink-0 items-start justify-between gap-2 border-b border-hairline px-4 py-3">
+        <h2 className="line-clamp-2 text-[13px] leading-snug font-semibold text-ink" title={t.name}>
+          {t.name || t.infoHash}
+        </h2>
+        <button aria-label="Close details" onClick={onClose} className="icon-btn -mt-0.5 -mr-1">
+          <X size={15} />
+        </button>
+      </header>
+
+      <div className="flex shrink-0 gap-4 border-b border-hairline px-4">
+        {(["overview", "files", "trackers", "activity"] as Tab[]).map((id) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`relative py-2.5 text-[12px] capitalize transition-colors duration-150 ${
+              tab === id ? "font-medium text-ink" : "text-ink-3 hover:text-ink-2"
+            }`}
+          >
+            {id}
+            {tab === id && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent" />}
           </button>
-        </header>
+        ))}
+      </div>
 
-        <div className="flex shrink-0 gap-4 border-b border-hairline px-4">
-          {(["overview", "files", "trackers", "activity"] as Tab[]).map((id) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={`relative py-2.5 text-[12px] capitalize transition-colors duration-150 ${
-                tab === id ? "font-medium text-ink" : "text-ink-3 hover:text-ink-2"
-              }`}
-            >
-              {id}
-              {tab === id && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent" />}
-            </button>
-          ))}
+      {tab === "overview" && (
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+          <StreamingSection t={t} toast={toast} onPhaseChange={onPhaseChange} />
+
+          <div className="rounded-lg border border-hairline bg-panel-2 p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
+              <span className="flex-1 text-[12px] font-medium capitalize text-ink">
+                {t.error ? "Error" : t.queued ? "Queued" : t.state.replace("_", " ")}
+              </span>
+              {readiness}
+            </div>
+            <ProgressBar value={t.progress} variant={variantForGrid} />
+            <div className="mt-1.5 flex justify-between text-[11px] tabular-nums text-ink-3">
+              <span>{percent(t.progress)}</span>
+              <span>
+                {formatBytes(t.progressBytes)} / {formatBytes(t.totalBytes)}
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-hairline bg-panel-2 px-3 py-2">
+            <Def label="State">{t.error ? "Error" : t.queued ? "Queued" : t.state.replace("_", " ")}</Def>
+            <Def label="Download speed">{formatSpeed(t.downloadBps)}</Def>
+            <Def label="Upload speed">{formatSpeed(t.uploadBps)}</Def>
+            <Def label="Remaining">{t.progress >= 1 ? "—" : `${formatBytes(Math.max(0, t.totalBytes - t.progressBytes))}`}</Def>
+            <Def label="ETA">{formatEta(t.etaSecs)}</Def>
+            <Def label="Seeds / Peers">
+              {Math.max(0, t.peers)} / {t.swarmSize < 0 ? "?" : t.swarmSize} seen
+            </Def>
+            <Def label="Uploaded">
+              {formatBytes(t.uploadedBytes)} · ratio {ratio.toFixed(2)}
+            </Def>
+            <Def label="Added">{formatDate(t.addedAt)}</Def>
+            <Def label="Completed">{t.completedAt != null ? formatDate(t.completedAt) : "—"}</Def>
+            <Def label="Info hash">
+              <span className="font-mono text-[11px] text-ink-2">{t.infoHash}</span>
+            </Def>
+            <Def label="Save location">
+              <span className="flex items-center justify-end gap-1.5">
+                <button
+                  title={`Click to copy · ${t.savePath}`}
+                  onClick={() =>
+                    navigator.clipboard.writeText(t.savePath).then(
+                      () => toast("success", "Path copied"),
+                      () => {},
+                    )
+                  }
+                  className="max-w-full truncate hover:text-accent"
+                >
+                  {truncMiddle(t.savePath, 34)}
+                </button>
+                <button
+                  aria-label="Open folder in Explorer"
+                  title="Open in Explorer"
+                  onClick={() =>
+                    revealItemInDir(t.savePath).catch((e) => toast("error", "Could not open folder", errMsg(e)))
+                  }
+                  className="icon-btn h-5 w-5 shrink-0"
+                >
+                  <FolderOpen size={13} />
+                </button>
+              </span>
+            </Def>
+          </div>
+
+          {t.error && (
+            <p className="rounded-md border border-danger/30 bg-danger/[0.08] px-3 py-2 text-[11px] break-words text-danger">
+              {t.error}
+            </p>
+          )}
         </div>
+      )}
 
-        {tab === "overview" && (
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-            <StreamingSection t={t} toast={toast} onPhaseChange={onPhaseChange} />
+      {tab === "files" && <FilesTab key={t.id} t={t} toast={toast} />}
 
-            <div className="rounded-lg border border-hairline bg-panel-2 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
-                <span className="flex-1 text-[12px] font-medium capitalize text-ink">
-                  {t.error ? "Error" : t.queued ? "Queued" : t.state.replace("_", " ")}
-                </span>
-                {readiness}
-              </div>
-              <ProgressBar value={t.progress} variant={variantForGrid} />
-              <div className="mt-1.5 flex justify-between text-[11px] tabular-nums text-ink-3">
-                <span>{percent(t.progress)}</span>
-                <span>
-                  {formatBytes(t.progressBytes)} / {formatBytes(t.totalBytes)}
-                </span>
-              </div>
-            </div>
+      {tab === "trackers" && (
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {t.trackers.length === 0 ? (
+            <p className="py-6 text-center text-[12px] text-ink-3">No trackers reported.</p>
+          ) : (
+            <ul className="divide-y divide-hairline">
+              {t.trackers.map((tr) => (
+                <li key={tr.url} className="truncate py-2 font-mono text-[11px] break-all text-ink-2" title={tr.url}>
+                  {tr.url}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
-            <div className="rounded-lg border border-hairline bg-panel-2 px-3 py-2">
-              <Def label="State">{t.error ? "Error" : t.queued ? "Queued" : t.state.replace("_", " ")}</Def>
-              <Def label="Download speed">{formatSpeed(t.downloadBps)}</Def>
-              <Def label="Upload speed">{formatSpeed(t.uploadBps)}</Def>
-              <Def label="Remaining">{t.progress >= 1 ? "—" : `${formatBytes(Math.max(0, t.totalBytes - t.progressBytes))}`}</Def>
-              <Def label="ETA">{formatEta(t.etaSecs)}</Def>
-              <Def label="Seeds / Peers">
-                {Math.max(0, t.peers)} / {t.swarmSize < 0 ? "?" : t.swarmSize} seen
-              </Def>
-              <Def label="Uploaded">
-                {formatBytes(t.uploadedBytes)} · ratio {ratio.toFixed(2)}
-              </Def>
-              <Def label="Added">{formatDate(t.addedAt)}</Def>
-              <Def label="Completed">{t.completedAt != null ? formatDate(t.completedAt) : "—"}</Def>
-              <Def label="Info hash">
-                <span className="font-mono text-[11px] text-ink-2">{t.infoHash}</span>
-              </Def>
-              <Def label="Save location">
-                <span className="flex items-center justify-end gap-1.5">
-                  <button
-                    title={`Click to copy · ${t.savePath}`}
-                    onClick={() =>
-                      navigator.clipboard.writeText(t.savePath).then(
-                        () => toast("success", "Path copied"),
-                        () => {},
-                      )
-                    }
-                    className="max-w-full truncate hover:text-accent"
-                  >
-                    {truncMiddle(t.savePath, 34)}
-                  </button>
-                  <button
-                    aria-label="Open folder in Explorer"
-                    title="Open in Explorer"
-                    onClick={() =>
-                      revealItemInDir(t.savePath).catch((e) => toast("error", "Could not open folder", errMsg(e)))
-                    }
-                    className="icon-btn h-5 w-5 shrink-0"
-                  >
-                    <FolderOpen size={13} />
-                  </button>
-                </span>
-              </Def>
-            </div>
-
-            {t.error && (
-              <p className="rounded-md border border-danger/30 bg-danger/[0.08] px-3 py-2 text-[11px] break-words text-danger">
-                {t.error}
-              </p>
-            )}
-          </div>
-        )}
-
-        {tab === "files" && <FilesTab key={t.id} t={t} toast={toast} />}
-
-        {tab === "trackers" && (
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {t.trackers.length === 0 ? (
-              <p className="py-6 text-center text-[12px] text-ink-3">No trackers reported.</p>
-            ) : (
-              <ul className="divide-y divide-hairline">
-                {t.trackers.map((tr) => (
-                  <li key={tr.url} className="truncate py-2 font-mono text-[11px] break-all text-ink-2" title={tr.url}>
-                    {tr.url}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
-        {tab === "activity" && (
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {activity.length === 0 ? (
-              <p className="py-6 text-center text-[12px] text-ink-3">No activity yet.</p>
-            ) : (
-              <ul className="space-y-2">
-                {activity.map((l, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[11px]">
-                    <span className="w-14 shrink-0 tabular-nums text-ink-3">{formatClock(l.ts)}</span>
-                    <span
-                      className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
-                        l.kind === "success"
-                          ? "bg-accent"
-                          : l.kind === "warn"
-                            ? "bg-warn"
-                            : l.kind === "error"
-                              ? "bg-danger"
-                              : "bg-ink-3"
-                      }`}
-                    />
-                    <span className="min-w-0 flex-1 break-words text-ink-2">{l.message}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </aside>
+      {tab === "activity" && (
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {activity.length === 0 ? (
+            <p className="py-6 text-center text-[12px] text-ink-3">No activity yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {activity.map((l, i) => (
+                <li key={i} className="flex items-start gap-2 text-[11px]">
+                  <span className="w-14 shrink-0 tabular-nums text-ink-3">{formatClock(l.ts)}</span>
+                  <span
+                    className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
+                      l.kind === "success"
+                        ? "bg-accent"
+                        : l.kind === "warn"
+                          ? "bg-warn"
+                          : l.kind === "error"
+                            ? "bg-danger"
+                            : "bg-ink-3"
+                    }`}
+                  />
+                  <span className="min-w-0 flex-1 break-words text-ink-2">{l.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </>
   );
 }

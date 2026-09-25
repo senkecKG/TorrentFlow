@@ -189,7 +189,7 @@ export function SettingsPage({ toast }: { toast: PushFn }) {
                 setRatioMode(mode);
                 patch({ stopRatio: mode === "unlimited" ? null : mode === "custom" ? (draft.stopRatio ?? 1.5) : Number(mode) });
               }}
-              className="input w-32 cursor-default appearance-none"
+              className="input w-32 cursor-default"
             >
               <option value="unlimited">Unlimited</option>
               <option value="1">1.0x</option>
@@ -201,10 +201,11 @@ export function SettingsPage({ toast }: { toast: PushFn }) {
                 type="number"
                 min={0}
                 step={0.1}
-                value={String(draft.stopRatio ?? 1.5)}
+                value={draft.stopRatio ?? ""}
                 onChange={(e) => {
                   const n = Number(e.target.value);
-                  patch({ stopRatio: e.target.value === "" || !Number.isFinite(n) ? null : n });
+                  // empty or negative means no limit, and the field shows exactly what will be saved
+                  patch({ stopRatio: e.target.value === "" || !(n >= 0) ? null : n });
                 }}
                 className="input w-16 text-right tabular-nums"
               />

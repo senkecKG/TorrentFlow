@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { TorrentDto } from "../lib/types";
 import { EmptyState } from "./EmptyState";
-import { ROW_GRID, TorrentRow, type RowActions } from "./TorrentRow";
+import { CHECK_CELL, ROW_GRID, TorrentRow, type RowActions } from "./TorrentRow";
 import type { View } from "./NavRail";
 
 const COLUMNS = ["", "Name", "Status", "Size", "Progress", "Speed", "ETA", "Peers", "Actions"];
@@ -44,14 +44,16 @@ export function TorrentList({
       <div
         className={`${ROW_GRID} sticky top-0 z-10 border-b border-hairline bg-page pb-1.5 text-[10px] font-medium tracking-wider text-ink-3 uppercase`}
       >
-        <input
-          ref={selectAllRef}
-          type="checkbox"
-          checked={allSelected}
-          onChange={() => onSelectAll(!allSelected)}
-          className="h-3.5 w-3.5"
-          aria-label={allSelected ? "Clear visible torrent selection" : "Select all visible torrents"}
-        />
+        <label className={CHECK_CELL} onMouseDown={(event) => event.preventDefault()}>
+          <input
+            ref={selectAllRef}
+            type="checkbox"
+            checked={allSelected}
+            onChange={() => onSelectAll(!allSelected)}
+            className="h-3.5 w-3.5"
+            aria-label={allSelected ? "Clear visible torrent selection" : "Select all visible torrents"}
+          />
+        </label>
         {COLUMNS.slice(1).map((column, index) => (
           <div
             key={column || index}
