@@ -1,6 +1,6 @@
 [package]
 name = "torrentflow"
-version = "0.1.4"
+version = "0.1.5"
 description = "TorrentFlow - watch torrents in VLC while they download"
 authors = ["TorrentFlow"]
 edition = "2021"
