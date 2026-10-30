@@ -5,7 +5,7 @@ Thanks for helping out.
 ## Setup
 
 ```sh
-git clone https://github.com/seNkoKG/TorrentFlow
+git clone https://github.com/senkecKG/TorrentFlow
 cd TorrentFlow
 npm install
 npm run tauri dev
@@ -22,4 +22,4 @@ Requires Node.js 20+, Rust stable, npm.
 
 ## Reporting bugs
 
-Open a [bug report](https://github.com/seNkoKG/TorrentFlow/issues/new?template=bug_report.yml) with reproduction steps and your TorrentFlow version.
+Open a [bug report](https://github.com/senkecKG/TorrentFlow/issues/new?template=bug_report.yml) with reproduction steps and your TorrentFlow version.

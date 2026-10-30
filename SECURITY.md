@@ -4,7 +4,7 @@
 
 Do not open a public issue for security vulnerabilities.
 
-Use GitHub's [private vulnerability reporting](https://github.com/seNkoKG/TorrentFlow/security/advisories/new) instead. Include reproduction steps and affected versions.
+Use GitHub's [private vulnerability reporting](https://github.com/senkecKG/TorrentFlow/security/advisories/new) instead. Include reproduction steps and affected versions.
 
 You will get a response within a few days.
 
