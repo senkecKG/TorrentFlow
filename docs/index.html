@@ -247,7 +247,7 @@
         <a href="#compare">Compare</a>
         <a href="#faq">FAQ</a>
         <a href="https://github.com/senkecKG/TorrentFlow" target="_blank" rel="noopener">Source</a>
-        <a class="nav-cta" href="https://github.com/senkecKG/TorrentFlow/releases/latest" target="_blank" rel="noopener">Download</a>
+        <a class="nav-cta" data-dl href="https://github.com/senkecKG/TorrentFlow/releases/download/v0.1.5/TorrentFlow_0.1.5_x64-setup.exe">Download</a>
       </div>
     </div>
   </nav>
@@ -262,7 +262,7 @@
       <strong>5&nbsp;MB installer.</strong> No Electron. No ads. No telemetry.
     </p>
     <div class="cta-row rv in d2">
-      <a class="btn btn-primary" href="https://github.com/senkecKG/TorrentFlow/releases/latest" target="_blank" rel="noopener">
+      <a class="btn btn-primary" data-dl href="https://github.com/senkecKG/TorrentFlow/releases/download/v0.1.5/TorrentFlow_0.1.5_x64-setup.exe">
         <svg viewBox="0 0 24 24"><path d="M12 3v10.6l3.3-3.3 1.4 1.4L12 16.4l-4.7-4.7 1.4-1.4L12 13.6V3zM5 19h14v2H5z"/></svg>
         Download for Windows
       </a>
@@ -448,7 +448,7 @@
       <h2>Ready in 30 seconds.</h2>
       <p class="sec-sub">Grab <span id="ver2" style="font-family:var(--mono);color:var(--green-hi)">v0.1.5</span>, run the installer, paste a magnet. That's it.</p>
       <div class="cta-row">
-        <a class="btn btn-primary" href="https://github.com/senkecKG/TorrentFlow/releases/latest" target="_blank" rel="noopener">
+        <a class="btn btn-primary" data-dl href="https://github.com/senkecKG/TorrentFlow/releases/download/v0.1.5/TorrentFlow_0.1.5_x64-setup.exe">
           <svg viewBox="0 0 24 24"><path d="M12 3v10.6l3.3-3.3 1.4 1.4L12 16.4l-4.7-4.7 1.4-1.4L12 13.6V3zM5 19h14v2H5z"/></svg>
           TorrentFlow for Windows
         </a>
@@ -541,13 +541,15 @@
   }), { threshold: 0.5 });
   document.querySelectorAll("[data-count]").forEach((el) => cio.observe(el));
 
-  /* ---------- version from GitHub ---------- */
+  /* ---------- version and installer link from GitHub ---------- */
   fetch("https://api.github.com/repos/senkecKG/TorrentFlow/releases/latest")
     .then((r) => r.ok ? r.json() : null)
     .then((d) => {
       if (!d || !d.tag_name) return;
       ver.textContent = d.tag_name;
       ver2.textContent = d.tag_name;
+      const exe = (d.assets || []).find((a) => a.name.endsWith("-setup.exe"));
+      if (exe) document.querySelectorAll("[data-dl]").forEach((a) => { a.href = exe.browser_download_url; });
     })
     .catch(() => {});
 
